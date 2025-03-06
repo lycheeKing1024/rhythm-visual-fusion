@@ -15,6 +15,12 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures }) => {
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioFeaturesRef = useRef<AudioFeatures>(audioFeatures);
+  
+  // Update audioFeaturesRef whenever audioFeatures changes
+  useEffect(() => {
+    audioFeaturesRef.current = audioFeatures;
+  }, [audioFeatures]);
   
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -62,18 +68,20 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures }) => {
         // Initialize video effects with our canvas and video
         videoEffects.setupCanvas(canvas, video);
         
-        // Start video effects processing with a function that converts AudioFeatures to Record<string, number>
+        // Use a ref to ensure we always get the latest audio features
         videoEffects.startProcessing(() => {
           // Convert AudioFeatures to Record<string, number> by explicitly creating an object
+          // Always use the current ref value to get the latest audio features
+          const currentFeatures = audioFeaturesRef.current;
           return {
-            kick: audioFeatures.kick,
-            snare: audioFeatures.snare,
-            hihat: audioFeatures.hihat,
-            bass: audioFeatures.bass,
-            mids: audioFeatures.mids,
-            treble: audioFeatures.treble,
-            energy: audioFeatures.energy,
-            rhythm: audioFeatures.rhythm
+            kick: currentFeatures.kick,
+            snare: currentFeatures.snare,
+            hihat: currentFeatures.hihat,
+            bass: currentFeatures.bass,
+            mids: currentFeatures.mids,
+            treble: currentFeatures.treble,
+            energy: currentFeatures.energy,
+            rhythm: currentFeatures.rhythm
           };
         });
         
@@ -96,7 +104,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures }) => {
         }
       };
     }
-  }, [videoSrc, audioFeatures]);
+  }, [videoSrc]);
 
   return (
     <div className="glass-panel rounded-lg p-4 h-full w-full flex flex-col">
