@@ -62,8 +62,20 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures }) => {
         // Initialize video effects with our canvas and video
         videoEffects.setupCanvas(canvas, video);
         
-        // Start video effects processing
-        videoEffects.startProcessing(() => audioFeatures);
+        // Start video effects processing with a function that converts AudioFeatures to Record<string, number>
+        videoEffects.startProcessing(() => {
+          // Convert AudioFeatures to Record<string, number> by explicitly creating an object
+          return {
+            kick: audioFeatures.kick,
+            snare: audioFeatures.snare,
+            hihat: audioFeatures.hihat,
+            bass: audioFeatures.bass,
+            mids: audioFeatures.mids,
+            treble: audioFeatures.treble,
+            energy: audioFeatures.energy,
+            rhythm: audioFeatures.rhythm
+          };
+        });
         
         // Loop the video
         video.loop = true;
