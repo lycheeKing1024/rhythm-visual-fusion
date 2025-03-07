@@ -1,12 +1,13 @@
 
-import * as Meyda from 'meyda';
+import * as Essentia from 'essentia.js';
+
 import { AudioFeatures } from './audioProcessor';
 
-class MeydaAudioProcessor {
+class EssentiaAudioProcessor {
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private gainNode: GainNode | null = null;
-  private meydaAnalyzer: any | null = null;
+  private essentia: any | null = null;
   private isPlaying: boolean = false;
   private audioSource: AudioBufferSourceNode | null = null;
   private mediaSource: MediaElementAudioSourceNode | null = null;
@@ -14,21 +15,11 @@ class MeydaAudioProcessor {
   private startTime: number = 0;
   private pauseTime: number = 0;
   private audioElement: HTMLAudioElement | null = null;
+  private audioDataBuffer: Float32Array = new Float32Array(0);
+  private frameSize: number = 2048;
+  private hopSize: number = 1024;
   
   // Feature extraction configuration
-  private features: string[] = [
-    'rms',
-    'energy',
-    'spectralCentroid',
-    'spectralFlatness',
-    'spectralSlope',
-    'spectralRolloff',
-    'loudness',
-    'perceptualSpread',
-    'spectralKurtosis',
-    'zcr'
-  ];
-  
   private lastFeatures: AudioFeatures = {
     kick: 0,
     snare: 0,
@@ -40,24 +31,32 @@ class MeydaAudioProcessor {
     rhythm: 0
   };
   
-  // Percussion detector thresholds
-  private thresholds = {
-    kickEnergy: 0.7,
-    kickSpecCentroid: 200,
-    snareZcr: 0.3,
-    snareSpecFlatness: 0.2,
-    hihatSpecRolloff: 0.7
-  };
+  // Percussion detection accumulators
+  private kickEnergy: number = 0;
+  private snareEnergy: number = 0;
+  private hihatEnergy: number = 0;
   
-  // Detection memory (to smooth out detection)
-  private memory = {
-    kickCount: 0,
-    snareCount: 0,
-    hihatCount: 0
+  // Frequency ranges for different percussion elements
+  private ranges = {
+    kick: { min: 40, max: 120 },    // Low frequencies for kick drum
+    snare: { min: 120, max: 250 },  // Mid-low frequencies for snare's body
+    snareCrack: { min: 2000, max: 5000 }, // High frequencies for snare's crack/snap
+    hihat: { min: 8000, max: 16000 }  // High frequencies for hi-hats
   };
   
   constructor() {
     this.initAudioContext();
+    this.initEssentia();
+  }
+
+  private async initEssentia() {
+    try {
+      // Initialize Essentia.js
+      this.essentia = await Essentia.EssentiaWASM();
+      console.log('Essentia.js initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize Essentia.js:', error);
+    }
   }
 
   private initAudioContext() {
@@ -69,7 +68,11 @@ class MeydaAudioProcessor {
       this.gainNode.connect(this.analyser);
       this.analyser.connect(this.audioContext.destination);
       
-      console.log('Meyda Audio Processor initialized');
+      // Set up analyzer for more detailed frequency data
+      this.analyser.fftSize = 2048;
+      this.analyser.smoothingTimeConstant = 0.3;
+      
+      console.log('Essentia Audio Processor initialized');
     } catch (error) {
       console.error("AudioContext not supported or error initializing", error);
     }
@@ -107,12 +110,12 @@ class MeydaAudioProcessor {
         this.audioElement.onerror = () => resolve();
       });
       
-      // Also decode the audio data for potential buffer-based processing
+      // Also decode the audio data for buffer-based processing
       const arrayBuffer = await file.arrayBuffer();
       this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
       
-      // Set up Meyda analyzer
-      this.setupMeydaAnalyzer();
+      // Set up audio processing
+      this.setupAudioProcessing();
       
       return true;
     } catch (error) {
@@ -121,7 +124,7 @@ class MeydaAudioProcessor {
     }
   }
   
-  private setupMeydaAnalyzer() {
+  private setupAudioProcessing() {
     if (!this.audioContext || !this.audioElement) return;
     
     // Clean up previous media source
@@ -133,64 +136,136 @@ class MeydaAudioProcessor {
     this.mediaSource = this.audioContext.createMediaElementSource(this.audioElement);
     this.mediaSource.connect(this.gainNode!);
     
-    // Create Meyda analyzer
-    this.meydaAnalyzer = Meyda.default.createMeydaAnalyzer({
-      audioContext: this.audioContext,
-      source: this.mediaSource,
-      bufferSize: 512,
-      featureExtractors: this.features,
-      callback: (features) => this.processFeatures(features)
-    });
+    // Setup a ScriptProcessorNode for real-time analysis
+    // Note: ScriptProcessorNode is deprecated but still widely used;
+    // replace with AudioWorkletNode in production
+    const scriptNode = this.audioContext.createScriptProcessor(this.frameSize, 1, 1);
+    this.mediaSource.connect(scriptNode);
+    scriptNode.connect(this.audioContext.destination);
+    
+    // Process audio in real-time
+    scriptNode.onaudioprocess = (audioProcessingEvent) => {
+      const inputBuffer = audioProcessingEvent.inputBuffer;
+      const inputData = inputBuffer.getChannelData(0);
+      
+      // Process audio data with Essentia
+      this.processAudioData(inputData);
+    };
   }
   
-  private processFeatures(features: Partial<Meyda.MeydaFeaturesObject>) {
-    if (!features) return;
+  private processAudioData(audioData: Float32Array) {
+    if (!this.essentia) return;
     
-    // Extract relevant features for percussion detection
-    const rms = features.rms || 0;
-    const energy = features.energy || 0;
-    const spectralCentroid = features.spectralCentroid || 0;
-    const spectralFlatness = features.spectralFlatness || 0;
-    const spectralRolloff = features.spectralRolloff || 0;
-    const zcr = features.zcr || 0;
-    const loudness = features.loudness ? (features.loudness as any).total || 0 : 0;
+    try {
+      // Create a copy of the audio data to avoid modifications to the original buffer
+      const audioDataCopy = new Float32Array(audioData);
+      
+      // Extract spectrum using Essentia
+      const frame = this.essentia.arrayToVector(audioDataCopy);
+      const spectrum = this.essentia.Spectrum(frame, this.frameSize, this.frameSize, false, 'hann');
+      
+      // Get magnitude spectrum for band energy calculations
+      const magnitudeSpectrum = spectrum.magnitude;
+      
+      // Calculate band energy for each percussion element
+      const kickBandEnergy = this.calculateBandEnergy(
+        magnitudeSpectrum, 
+        this.ranges.kick.min, 
+        this.ranges.kick.max, 
+        this.audioContext!.sampleRate, 
+        this.frameSize
+      );
+      
+      const snareLowBandEnergy = this.calculateBandEnergy(
+        magnitudeSpectrum, 
+        this.ranges.snare.min, 
+        this.ranges.snare.max, 
+        this.audioContext!.sampleRate, 
+        this.frameSize
+      );
+      
+      const snareHighBandEnergy = this.calculateBandEnergy(
+        magnitudeSpectrum, 
+        this.ranges.snareCrack.min, 
+        this.ranges.snareCrack.max, 
+        this.audioContext!.sampleRate, 
+        this.frameSize
+      );
+      
+      const hihatBandEnergy = this.calculateBandEnergy(
+        magnitudeSpectrum, 
+        this.ranges.hihat.min, 
+        this.ranges.hihat.max, 
+        this.audioContext!.sampleRate, 
+        this.frameSize
+      );
+      
+      // Advanced percussion detection algorithms
+      
+      // Using Exponential Moving Average for smoother transitions
+      const alpha = 0.3; // Smoothing factor
+      
+      // Kick detection: strong low frequency content
+      this.kickEnergy = alpha * kickBandEnergy + (1 - alpha) * this.kickEnergy;
+      
+      // Snare detection: combination of mid-low body and high crack
+      const snareEnergy = snareLowBandEnergy * 0.3 + snareHighBandEnergy * 0.7;
+      this.snareEnergy = alpha * snareEnergy + (1 - alpha) * this.snareEnergy;
+      
+      // Hi-hat detection: high frequency content
+      this.hihatEnergy = alpha * hihatBandEnergy + (1 - alpha) * this.hihatEnergy;
+      
+      // Calculate spectral centroid for bass/mid/treble balance
+      const spectralCentroid = this.essentia.SpectralCentroid(magnitudeSpectrum);
+      
+      // Calculate overall energy
+      const rms = this.essentia.RMS(frame);
+      
+      // Update features with normalized values
+      this.lastFeatures = {
+        // Normalize values to 0-1 range
+        kick: Math.min(1, this.kickEnergy * 5),
+        snare: Math.min(1, this.snareEnergy * 5),
+        hihat: Math.min(1, this.hihatEnergy * 5),
+        bass: this.mapRange(spectralCentroid.spectralCentroid, 0, 500, 1, 0), // Bass is inverse of spectral centroid
+        mids: this.calculateBandEnergy(magnitudeSpectrum, 250, 2000, this.audioContext!.sampleRate, this.frameSize) * 3,
+        treble: this.calculateBandEnergy(magnitudeSpectrum, 2000, 16000, this.audioContext!.sampleRate, this.frameSize) * 3,
+        energy: Math.min(1, rms.rms * 3),
+        rhythm: (this.kickEnergy * 0.6 + this.snareEnergy * 0.4) * 5 // Rhythm is weighted kick+snare
+      };
+      
+      // Free Essentia vectors to prevent memory leaks
+      this.essentia.freeVector(frame);
+      this.essentia.freeVector(magnitudeSpectrum);
+      
+    } catch (error) {
+      console.error("Error processing audio data with Essentia:", error);
+    }
+  }
+  
+  private calculateBandEnergy(
+    spectrum: Float32Array, 
+    minFreq: number, 
+    maxFreq: number, 
+    sampleRate: number, 
+    frameSize: number
+  ): number {
+    // Convert frequencies to bin indices
+    const minBin = Math.floor(minFreq * frameSize / sampleRate);
+    const maxBin = Math.ceil(maxFreq * frameSize / sampleRate);
     
-    // Advanced percussion detection algorithms
+    // Ensure bins are within valid range
+    const validMinBin = Math.max(0, minBin);
+    const validMaxBin = Math.min(spectrum.length - 1, maxBin);
     
-    // Kick detection: low spectral centroid + high energy
-    const isKick = 
-      spectralCentroid < this.thresholds.kickSpecCentroid && 
-      energy > this.thresholds.kickEnergy;
+    // Sum squared magnitude within the frequency range
+    let energy = 0;
+    for (let i = validMinBin; i <= validMaxBin; i++) {
+      energy += spectrum[i] * spectrum[i];
+    }
     
-    // Snare detection: high zero crossing rate + specific spectral flatness
-    const isSnare = 
-      zcr > this.thresholds.snareZcr && 
-      spectralFlatness > this.thresholds.snareSpecFlatness;
-    
-    // Hi-hat detection: high spectral rolloff
-    const isHihat = spectralRolloff > this.thresholds.hihatSpecRolloff;
-    
-    // Apply memory/temporal smoothing for detection stability
-    if (isKick) this.memory.kickCount = Math.min(8, this.memory.kickCount + 3);
-    else this.memory.kickCount = Math.max(0, this.memory.kickCount - 1);
-    
-    if (isSnare) this.memory.snareCount = Math.min(8, this.memory.snareCount + 3);
-    else this.memory.snareCount = Math.max(0, this.memory.snareCount - 1);
-    
-    if (isHihat) this.memory.hihatCount = Math.min(8, this.memory.hihatCount + 3);
-    else this.memory.hihatCount = Math.max(0, this.memory.hihatCount - 1);
-    
-    // Update features with normalized values
-    this.lastFeatures = {
-      kick: this.memory.kickCount / 8,
-      snare: this.memory.snareCount / 8,
-      hihat: this.memory.hihatCount / 8,
-      bass: this.mapRange(spectralCentroid, 0, 500, 1, 0), // Bass is inverse of spectral centroid
-      mids: this.mapRange(spectralCentroid, 200, 2000, 0, 1),
-      treble: this.mapRange(spectralCentroid, 2000, 8000, 0, 1),
-      energy: this.mapRange(loudness || energy, 0, 10, 0, 1),
-      rhythm: (this.memory.kickCount / 8) * 0.6 + (this.memory.snareCount / 8) * 0.4 // Rhythm is weighted kick+snare
-    };
+    // Normalize by the number of bins
+    return energy / (validMaxBin - validMinBin + 1);
   }
   
   // Map a value from one range to another (with clamping)
@@ -205,11 +280,6 @@ class MeydaAudioProcessor {
     // Resume audio context if it's suspended
     if (this.audioContext.state === 'suspended') {
       this.audioContext.resume();
-    }
-    
-    // Start Meyda analyzer
-    if (this.meydaAnalyzer) {
-      this.meydaAnalyzer.start();
     }
     
     // Play from the current position
@@ -227,11 +297,6 @@ class MeydaAudioProcessor {
     this.pauseTime = this.audioElement.currentTime;
     this.audioElement.pause();
     
-    // Stop Meyda analyzer to save resources
-    if (this.meydaAnalyzer) {
-      this.meydaAnalyzer.stop();
-    }
-    
     this.isPlaying = false;
   }
 
@@ -239,10 +304,6 @@ class MeydaAudioProcessor {
     if (this.audioElement) {
       this.audioElement.pause();
       this.audioElement.currentTime = 0;
-    }
-    
-    if (this.meydaAnalyzer) {
-      this.meydaAnalyzer.stop();
     }
     
     this.isPlaying = false;
@@ -294,5 +355,5 @@ class MeydaAudioProcessor {
 }
 
 // Singleton instance
-const meydaAudioProcessor = new MeydaAudioProcessor();
-export default meydaAudioProcessor;
+const essentiaAudioProcessor = new EssentiaAudioProcessor();
+export default essentiaAudioProcessor;

@@ -6,7 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import audioProcessor, { AudioFeatures } from '@/lib/audioProcessor';
 import mlAudioProcessor from '@/lib/mlAudioProcessor';
-import meydaAudioProcessor from '@/lib/meydaAudioProcessor';
+import essentiaAudioProcessor from '@/lib/meydaAudioProcessor';
 
 interface AudioAnalyzerProps {
   onFeaturesUpdate: (features: AudioFeatures) => void;
@@ -18,7 +18,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
-  const [processorType, setProcessorType] = useState<'basic' | 'ml' | 'meyda'>('meyda');
+  const [processorType, setProcessorType] = useState<'basic' | 'ml' | 'essentia'>('essentia');
   const [isMLLoaded, setIsMLLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const animationRef = useRef<number | null>(null);
@@ -60,10 +60,10 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
             setDuration(mlAudioProcessor.getDuration());
           }
           break;
-        case 'meyda':
-          success = await meydaAudioProcessor.loadAudio(file);
+        case 'essentia':
+          success = await essentiaAudioProcessor.loadAudio(file);
           if (success) {
-            setDuration(meydaAudioProcessor.getDuration());
+            setDuration(essentiaAudioProcessor.getDuration());
           }
           break;
         default: // basic
@@ -77,11 +77,11 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     }
   };
 
-  const switchProcessor = async (newType: 'basic' | 'ml' | 'meyda') => {
+  const switchProcessor = async (newType: 'basic' | 'ml' | 'essentia') => {
     if (isPlaying) {
       switch (processorType) {
         case 'ml': mlAudioProcessor.pause(); break;
-        case 'meyda': meydaAudioProcessor.pause(); break;
+        case 'essentia': essentiaAudioProcessor.pause(); break;
         default: audioProcessor.pause();
       }
       setIsPlaying(false);
@@ -105,10 +105,10 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
             setDuration(mlAudioProcessor.getDuration());
           }
           break;
-        case 'meyda':
-          success = await meydaAudioProcessor.loadAudio(audioFile);
+        case 'essentia':
+          success = await essentiaAudioProcessor.loadAudio(audioFile);
           if (success) {
-            setDuration(meydaAudioProcessor.getDuration());
+            setDuration(essentiaAudioProcessor.getDuration());
           }
           break;
         default: // basic
@@ -126,7 +126,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     if (isPlaying) {
       switch (processorType) {
         case 'ml': mlAudioProcessor.pause(); break;
-        case 'meyda': meydaAudioProcessor.pause(); break;
+        case 'essentia': essentiaAudioProcessor.pause(); break;
         default: audioProcessor.pause();
       }
       
@@ -138,7 +138,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     } else {
       switch (processorType) {
         case 'ml': mlAudioProcessor.play(); break;
-        case 'meyda': meydaAudioProcessor.play(); break;
+        case 'essentia': essentiaAudioProcessor.play(); break;
         default: audioProcessor.play();
       }
       
@@ -152,12 +152,16 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     
     switch (processorType) {
       case 'ml':
+        mlAudioProcessor.seekTo(seekTime);
+        setCurrentTime(seekTime);
         break;
-      case 'meyda':
-        meydaAudioProcessor.seekTo(seekTime);
+      case 'essentia':
+        essentiaAudioProcessor.seekTo(seekTime);
         setCurrentTime(seekTime);
         break;
       default:
+        audioProcessor.seekTo(seekTime);
+        setCurrentTime(seekTime);
         break;
     }
   };
@@ -165,7 +169,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
   useEffect(() => {
     switch (processorType) {
       case 'ml': mlAudioProcessor.setVolume(volume); break;
-      case 'meyda': meydaAudioProcessor.setVolume(volume); break;
+      case 'essentia': essentiaAudioProcessor.setVolume(volume); break;
       default: audioProcessor.setVolume(volume);
     }
   }, [volume, processorType]);
@@ -179,9 +183,9 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
         playbackState = mlAudioProcessor.getPlaybackState();
         audioFeatures = await mlAudioProcessor.getAudioFeatures();
         break;
-      case 'meyda':
-        playbackState = meydaAudioProcessor.getPlaybackState();
-        audioFeatures = meydaAudioProcessor.getAudioFeatures();
+      case 'essentia':
+        playbackState = essentiaAudioProcessor.getPlaybackState();
+        audioFeatures = essentiaAudioProcessor.getAudioFeatures();
         break;
       default:
         playbackState = audioProcessor.getPlaybackState();
@@ -207,7 +211,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
       }
       audioProcessor.stop();
       mlAudioProcessor.stop();
-      meydaAudioProcessor.stop();
+      essentiaAudioProcessor.stop();
     };
   }, []);
 
@@ -233,14 +237,14 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
                     </Button>
                     
                     <Button 
-                      variant={processorType === 'meyda' ? "default" : "outline"} 
+                      variant={processorType === 'essentia' ? "default" : "outline"} 
                       size="sm"
-                      onClick={() => switchProcessor('meyda')}
+                      onClick={() => switchProcessor('essentia')}
                       disabled={isLoading}
                       className="px-2 py-1 h-auto"
                     >
                       <Music size={14} className="mr-1" />
-                      <span className="text-xs">Meyda</span>
+                      <span className="text-xs">Essentia</span>
                     </Button>
                     
                     <Button 
@@ -333,7 +337,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                   <span className="text-xs text-muted-foreground">
-                    {processorType === 'ml' ? "ML Analyzing" : processorType === 'meyda' ? "Meyda Analyzing" : "Basic Analyzing"}
+                    {processorType === 'ml' ? "ML Analyzing" : processorType === 'essentia' ? "Essentia Analyzing" : "Basic Analyzing"}
                   </span>
                 </div>
               </div>
@@ -360,7 +364,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
               <p className="text-muted-foreground">No audio file selected</p>
               <p className="text-muted-foreground mt-1">Upload an audio file to begin analysis</p>
               {processorType === 'ml' && <p className="text-xs text-primary mt-2">Using GPU-accelerated ML detection</p>}
-              {processorType === 'meyda' && <p className="text-xs text-primary mt-2">Using professional Meyda audio analysis</p>}
+              {processorType === 'essentia' && <p className="text-xs text-primary mt-2">Using advanced Essentia.js for clear kick/snare detection</p>}
             </div>
           )
         )}
