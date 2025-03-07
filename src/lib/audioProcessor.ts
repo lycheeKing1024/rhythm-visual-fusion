@@ -1,4 +1,3 @@
-
 export interface AudioFeatures {
   kick: number;
   snare: number;
@@ -111,6 +110,21 @@ class AudioProcessor {
       this.audioSource = null;
     }
     this.isPlaying = false;
+  }
+
+  public seekTo(time: number) {
+    if (!this.audioContext || !this.audioBuffer) return;
+    
+    // Stop current playback
+    this.stop();
+    
+    // Update pause time to the requested position
+    this.pauseTime = time;
+    
+    // If we were previously playing, start playback from the new position
+    if (this.isPlaying) {
+      this.play();
+    }
   }
 
   public setVolume(volume: number) {

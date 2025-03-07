@@ -1,8 +1,6 @@
-
 import { pipeline, RawImage } from "@huggingface/transformers";
 import { AudioFeatures } from "./audioProcessor";
 
-// Interface for the ML model output
 interface BeatDetectionResult {
   kick: number;
   snare: number;
@@ -58,8 +56,6 @@ class MLAudioProcessor {
       try {
         console.log("Loading ML audio analysis model with WebGPU...");
         
-        // Load a specialized audio classification model from Hugging Face
-        // Using a small model optimized for real-time audio processing
         this.mlModel = await pipeline(
           "audio-classification",
           "MIT/ast-finetuned-audioset-10-10-0.4593", 
@@ -87,7 +83,6 @@ class MLAudioProcessor {
     }
     
     try {
-      // Initialize ML model in parallel with audio loading
       this.initModel();
       
       const arrayBuffer = await file.arrayBuffer();
@@ -102,14 +97,12 @@ class MLAudioProcessor {
   public play() {
     if (!this.audioContext || !this.audioBuffer || !this.gainNode || !this.analyser) return;
     
-    // Stop previous playback if any
     this.stop();
     
     this.audioSource = this.audioContext.createBufferSource();
     this.audioSource.buffer = this.audioBuffer;
     this.audioSource.connect(this.gainNode);
     
-    // Resume audio context if it's suspended
     if (this.audioContext.state === 'suspended') {
       this.audioContext.resume();
     }
@@ -140,6 +133,18 @@ class MLAudioProcessor {
     this.isPlaying = false;
   }
 
+  public seekTo(time: number) {
+    if (!this.audioContext || !this.audioBuffer) return;
+    
+    this.stop();
+    
+    this.pauseTime = time;
+    
+    if (this.isPlaying) {
+      this.play();
+    }
+  }
+
   public setVolume(volume: number) {
     if (this.gainNode) {
       this.gainNode.gain.value = volume;
@@ -164,7 +169,6 @@ class MLAudioProcessor {
   }
 
   public async getAudioFeatures(): Promise<AudioFeatures> {
-    // Default values in case analysis fails
     const defaultFeatures: AudioFeatures = {
       kick: 0, snare: 0, hihat: 0, bass: 0, mids: 0, treble: 0, energy: 0, rhythm: 0
     };
@@ -173,21 +177,16 @@ class MLAudioProcessor {
       return defaultFeatures;
     }
     
-    // Get the frequency data from the analyzer
     const frequencyData = new Float32Array(this.analyser.frequencyBinCount);
     this.analyser.getFloatFrequencyData(frequencyData);
     
-    // If our model isn't loaded yet, just do a basic analysis
     if (!this.isModelLoaded) {
       return this.performBasicAnalysis(frequencyData);
     }
     
     try {
-      // Normalize frequency data for the ML model input
-      // Convert to format expected by the ML model
       const audioData = this.prepareAudioDataForModel(frequencyData);
       
-      // Run prediction on our model
       const result = await this.mlModel(audioData, { topk: 10 });
       
       return this.processMLModelResults(result, frequencyData);
@@ -198,17 +197,10 @@ class MLAudioProcessor {
   }
   
   private prepareAudioDataForModel(frequencyData: Float32Array): any {
-    // Normalize the frequency data for the model
-    // This is a simplified version - real implementation would depend on the model's expected format
-    
-    // For this example, we'll just create a small spectrogram-like representation
     const normalizedData = Array.from(frequencyData).map(val => {
-      // Convert from dB to range 0-1
       return Math.min(1, Math.max(0, (val + 100) / 100));
     });
     
-    // Return as dummy audio waveform (simplified for this example)
-    // In a real implementation, you would format this properly for your specific model
     return {
       data: normalizedData,
       sampling_rate: this.audioContext?.sampleRate || 44100,
@@ -216,11 +208,6 @@ class MLAudioProcessor {
   }
   
   private processMLModelResults(results: any, frequencyData: Float32Array): AudioFeatures {
-    // Extract relevant information from ML model results
-    // This is a simplified example - real implementation would map the model's outputs
-    // to the features we need
-    
-    // Create result object
     const features: AudioFeatures = {
       kick: 0,
       snare: 0,
@@ -232,12 +219,9 @@ class MLAudioProcessor {
       rhythm: 0
     };
     
-    // Process model results to extract features
-    // Here we're looking for labels that match our features
     for (const prediction of results) {
       const { label, score } = prediction;
       
-      // Map model outputs to our features
       if (label.includes("drum") || label.includes("bass drum") || label.includes("kick")) {
         features.kick = Math.max(features.kick, score);
       }
@@ -251,34 +235,28 @@ class MLAudioProcessor {
         features.bass = Math.max(features.bass, score);
       }
       
-      // General energy detection
       if (label.includes("music") || label.includes("loud")) {
         features.energy = Math.max(features.energy, score);
       }
     }
     
-    // Fallback to traditional analysis for features not detected by the model
     const traditionalFeatures = this.performBasicAnalysis(frequencyData);
     
-    // Use ML results when confident, otherwise fall back to basic analysis
     features.kick = features.kick > 0.3 ? features.kick : traditionalFeatures.kick;
     features.snare = features.snare > 0.3 ? features.snare : traditionalFeatures.snare;
     features.hihat = features.hihat > 0.3 ? features.hihat : traditionalFeatures.hihat;
     features.bass = features.bass > 0.3 ? features.bass : traditionalFeatures.bass;
     
-    // Use basic analysis for these features
     features.mids = traditionalFeatures.mids;
     features.treble = traditionalFeatures.treble;
     features.energy = features.energy > 0.3 ? features.energy : traditionalFeatures.energy;
     
-    // Calculate rhythm based on kick and snare
     features.rhythm = this.calculateRhythm(features.kick, features.snare);
     
     return features;
   }
   
   private performBasicAnalysis(frequencyData: Float32Array): AudioFeatures {
-    // Frequency bands (Hz) - these ranges are more precise for music analysis
     const bands = {
       kick: { min: 40, max: 120 },
       snare: { min: 120, max: 250 },
@@ -288,11 +266,9 @@ class MLAudioProcessor {
       treble: { min: 2000, max: 16000 }
     };
     
-    // Calculate frequency bins based on audio context's sample rate
     const nyquist = this.audioContext?.sampleRate ? this.audioContext.sampleRate / 2 : 22050;
     const binCount = frequencyData.length;
     
-    // Extract features for each band
     const features: AudioFeatures = {
       kick: this.getAverageForBand(frequencyData, bands.kick.min, bands.kick.max, nyquist, binCount),
       snare: this.getAverageForBand(frequencyData, bands.snare.min, bands.snare.max, nyquist, binCount),
@@ -304,10 +280,8 @@ class MLAudioProcessor {
       rhythm: 0
     };
     
-    // Calculate overall energy
     features.energy = this.calculateEnergy(frequencyData);
     
-    // Calculate rhythm based on kick and snare
     features.rhythm = this.calculateRhythm(features.kick, features.snare);
     
     return features;
@@ -329,9 +303,8 @@ class MLAudioProcessor {
     if (binRange <= 0) return 0;
     
     for (let i = lowBin; i <= highBin; i++) {
-      // Convert from dB to normalized amplitude (0-1)
-      const amplitude = (frequencyData[i] + 100) / 100; // +100 to shift from negative dB to positive, /100 to normalize
-      sum += Math.max(0, Math.min(1, amplitude)); // Clamp between 0-1
+      const amplitude = (frequencyData[i] + 100) / 100;
+      sum += Math.max(0, Math.min(1, amplitude));
     }
     
     return sum / binRange;
@@ -340,20 +313,17 @@ class MLAudioProcessor {
   private calculateEnergy(frequencyData: Float32Array): number {
     let sum = 0;
     for (let i = 0; i < frequencyData.length; i++) {
-      // Convert from dB to normalized amplitude (0-1)
       const amplitude = (frequencyData[i] + 100) / 100;
-      sum += Math.max(0, Math.min(1, amplitude)); // Clamp between 0-1
+      sum += Math.max(0, Math.min(1, amplitude));
     }
     
     return sum / frequencyData.length;
   }
   
   private calculateRhythm(kick: number, snare: number): number {
-    // Weight kick more than snare for rhythm detection with enhanced sensitivity
     return Math.pow(kick, 1.5) * 0.7 + Math.pow(snare, 1.5) * 0.3;
   }
 }
 
-// Create singleton instance
 const mlAudioProcessor = new MLAudioProcessor();
 export default mlAudioProcessor;
