@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Upload, Volume2, Cpu, Music, WaveformIcon } from 'lucide-react';
+import { Play, Pause, Upload, Volume2, Cpu, Music, WaveIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
@@ -228,9 +228,10 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
                       disabled={isLoading}
                       className="px-2 py-1 h-auto"
                     >
-                      <WaveformIcon size={14} className="mr-1" />
+                      <WaveIcon size={14} className="mr-1" />
                       <span className="text-xs">Basic</span>
                     </Button>
+                    
                     <Button 
                       variant={processorType === 'meyda' ? "default" : "outline"} 
                       size="sm"
@@ -241,6 +242,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
                       <Music size={14} className="mr-1" />
                       <span className="text-xs">Meyda</span>
                     </Button>
+                    
                     <Button 
                       variant={processorType === 'ml' ? "default" : "outline"} 
                       size="sm"

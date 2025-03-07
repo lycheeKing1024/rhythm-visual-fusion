@@ -134,7 +134,7 @@ class MeydaAudioProcessor {
     this.mediaSource.connect(this.gainNode!);
     
     // Create Meyda analyzer
-    this.meydaAnalyzer = Meyda.createMeydaAnalyzer({
+    this.meydaAnalyzer = Meyda.default.createMeydaAnalyzer({
       audioContext: this.audioContext,
       source: this.mediaSource,
       bufferSize: 512,
