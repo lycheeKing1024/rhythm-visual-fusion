@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Upload, Volume2, Cpu } from 'lucide-react';
+import { Play, Pause, Upload, Volume2, Cpu, Music, Waveform } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import audioProcessor, { AudioFeatures } from '@/lib/audioProcessor';
 import mlAudioProcessor from '@/lib/mlAudioProcessor';
+import meydaAudioProcessor from '@/lib/meydaAudioProcessor';
 
 interface AudioAnalyzerProps {
   onFeaturesUpdate: (features: AudioFeatures) => void;
@@ -18,7 +19,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
-  const [useML, setUseML] = useState(true);
+  const [processorType, setProcessorType] = useState<'basic' | 'ml' | 'meyda'>('meyda');
   const [isMLLoaded, setIsMLLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const animationRef = useRef<number | null>(null);
@@ -26,10 +27,10 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     kick: 0, snare: 0, hihat: 0, bass: 0, mids: 0, treble: 0, energy: 0, rhythm: 0
   });
 
-  // Initialize ML model
+  // Initialize ML model if needed
   useEffect(() => {
     const loadMLModel = async () => {
-      if (useML && !isMLLoaded) {
+      if (processorType === 'ml' && !isMLLoaded) {
         setIsLoading(true);
         const success = await mlAudioProcessor.initModel();
         setIsMLLoaded(success);
@@ -38,7 +39,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     };
     
     loadMLModel();
-  }, [useML, isMLLoaded]);
+  }, [processorType, isMLLoaded]);
 
   // Format time in mm:ss
   const formatTime = (time: number) => {
@@ -56,16 +57,24 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
       setIsLoading(true);
       
       let success;
-      if (useML) {
-        success = await mlAudioProcessor.loadAudio(file);
-        if (success) {
-          setDuration(mlAudioProcessor.getDuration());
-        }
-      } else {
-        success = await audioProcessor.loadAudio(file);
-        if (success) {
-          setDuration(audioProcessor.getDuration());
-        }
+      switch (processorType) {
+        case 'ml':
+          success = await mlAudioProcessor.loadAudio(file);
+          if (success) {
+            setDuration(mlAudioProcessor.getDuration());
+          }
+          break;
+        case 'meyda':
+          success = await meydaAudioProcessor.loadAudio(file);
+          if (success) {
+            setDuration(meydaAudioProcessor.getDuration());
+          }
+          break;
+        default: // basic
+          success = await audioProcessor.loadAudio(file);
+          if (success) {
+            setDuration(audioProcessor.getDuration());
+          }
       }
       
       setIsLoading(false);
@@ -73,13 +82,13 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
   };
 
   // Handle processor toggle
-  const toggleProcessor = async () => {
+  const switchProcessor = async (newType: 'basic' | 'ml' | 'meyda') => {
+    // Stop playback before switching processors
     if (isPlaying) {
-      // Stop playback before switching processors
-      if (useML) {
-        mlAudioProcessor.pause();
-      } else {
-        audioProcessor.pause();
+      switch (processorType) {
+        case 'ml': mlAudioProcessor.pause(); break;
+        case 'meyda': meydaAudioProcessor.pause(); break;
+        default: audioProcessor.pause();
       }
       setIsPlaying(false);
       
@@ -89,23 +98,31 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
       }
     }
     
-    setUseML(!useML);
+    setProcessorType(newType);
     
     // If we have an audio file, reload it with the new processor
     if (audioFile) {
       setIsLoading(true);
       let success;
       
-      if (!useML) { // Switching to ML
-        success = await mlAudioProcessor.loadAudio(audioFile);
-        if (success) {
-          setDuration(mlAudioProcessor.getDuration());
-        }
-      } else { // Switching to regular
-        success = await audioProcessor.loadAudio(audioFile);
-        if (success) {
-          setDuration(audioProcessor.getDuration());
-        }
+      switch (newType) {
+        case 'ml':
+          success = await mlAudioProcessor.loadAudio(audioFile);
+          if (success) {
+            setDuration(mlAudioProcessor.getDuration());
+          }
+          break;
+        case 'meyda':
+          success = await meydaAudioProcessor.loadAudio(audioFile);
+          if (success) {
+            setDuration(meydaAudioProcessor.getDuration());
+          }
+          break;
+        default: // basic
+          success = await audioProcessor.loadAudio(audioFile);
+          if (success) {
+            setDuration(audioProcessor.getDuration());
+          }
       }
       
       setIsLoading(false);
@@ -115,10 +132,10 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
   // Handle playback controls
   const togglePlayback = () => {
     if (isPlaying) {
-      if (useML) {
-        mlAudioProcessor.pause();
-      } else {
-        audioProcessor.pause();
+      switch (processorType) {
+        case 'ml': mlAudioProcessor.pause(); break;
+        case 'meyda': meydaAudioProcessor.pause(); break;
+        default: audioProcessor.pause();
       }
       
       if (animationRef.current) {
@@ -127,10 +144,10 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
       }
       setIsPlaying(false);
     } else {
-      if (useML) {
-        mlAudioProcessor.play();
-      } else {
-        audioProcessor.play();
+      switch (processorType) {
+        case 'ml': mlAudioProcessor.play(); break;
+        case 'meyda': meydaAudioProcessor.play(); break;
+        default: audioProcessor.play();
       }
       
       setIsPlaying(true);
@@ -138,26 +155,50 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     }
   };
 
+  // Handle seeking
+  const handleSeek = (value: number[]) => {
+    const seekTime = value[0];
+    
+    switch (processorType) {
+      case 'ml':
+        // ML processor doesn't support seeking yet
+        break;
+      case 'meyda':
+        meydaAudioProcessor.seekTo(seekTime);
+        setCurrentTime(seekTime);
+        break;
+      default:
+        // Basic processor doesn't support seeking yet
+        break;
+    }
+  };
+
   // Update volume
   useEffect(() => {
-    if (useML) {
-      mlAudioProcessor.setVolume(volume);
-    } else {
-      audioProcessor.setVolume(volume);
+    switch (processorType) {
+      case 'ml': mlAudioProcessor.setVolume(volume); break;
+      case 'meyda': meydaAudioProcessor.setVolume(volume); break;
+      default: audioProcessor.setVolume(volume);
     }
-  }, [volume, useML]);
+  }, [volume, processorType]);
 
   // Update playback time and visualizer
   const updatePlayback = async () => {
     let playbackState;
     let audioFeatures;
     
-    if (useML) {
-      playbackState = mlAudioProcessor.getPlaybackState();
-      audioFeatures = await mlAudioProcessor.getAudioFeatures();
-    } else {
-      playbackState = audioProcessor.getPlaybackState();
-      audioFeatures = audioProcessor.getAudioFeatures();
+    switch (processorType) {
+      case 'ml':
+        playbackState = mlAudioProcessor.getPlaybackState();
+        audioFeatures = await mlAudioProcessor.getAudioFeatures();
+        break;
+      case 'meyda':
+        playbackState = meydaAudioProcessor.getPlaybackState();
+        audioFeatures = meydaAudioProcessor.getAudioFeatures();
+        break;
+      default:
+        playbackState = audioProcessor.getPlaybackState();
+        audioFeatures = audioProcessor.getAudioFeatures();
     }
     
     setCurrentTime(playbackState.currentTime);
@@ -182,6 +223,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
       }
       audioProcessor.stop();
       mlAudioProcessor.stop();
+      meydaAudioProcessor.stop();
     };
   }, []);
 
@@ -194,20 +236,41 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      {useML ? "ML Detection" : "Basic Detection"}
-                    </span>
-                    <Switch 
-                      checked={useML} 
-                      onCheckedChange={toggleProcessor}
+                  <div className="flex items-center gap-3">
+                    <Button 
+                      variant={processorType === 'basic' ? "default" : "outline"} 
+                      size="sm"
+                      onClick={() => switchProcessor('basic')}
                       disabled={isLoading}
-                    />
-                    {useML && <Cpu size={14} className="text-primary animate-pulse" />}
+                      className="px-2 py-1 h-auto"
+                    >
+                      <Waveform size={14} className="mr-1" />
+                      <span className="text-xs">Basic</span>
+                    </Button>
+                    <Button 
+                      variant={processorType === 'meyda' ? "default" : "outline"} 
+                      size="sm"
+                      onClick={() => switchProcessor('meyda')}
+                      disabled={isLoading}
+                      className="px-2 py-1 h-auto"
+                    >
+                      <Music size={14} className="mr-1" />
+                      <span className="text-xs">Meyda</span>
+                    </Button>
+                    <Button 
+                      variant={processorType === 'ml' ? "default" : "outline"} 
+                      size="sm"
+                      onClick={() => switchProcessor('ml')}
+                      disabled={isLoading}
+                      className="px-2 py-1 h-auto"
+                    >
+                      <Cpu size={14} className="mr-1" />
+                      <span className="text-xs">ML</span>
+                    </Button>
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Toggle between ML-based and basic audio feature detection</p>
+                  <p>Select audio analysis algorithm</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -235,7 +298,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
                 <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
               <p className="text-sm text-muted-foreground mt-2">
-                {useML ? "Loading ML model and audio..." : "Loading audio..."}
+                {processorType === 'ml' ? "Loading ML model and audio..." : "Loading audio..."}
               </p>
             </div>
           </div>
@@ -253,9 +316,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
                 value={[currentTime]} 
                 max={duration} 
                 step={0.01}
-                onValueChange={(value) => {
-                  // TODO: Implement seek functionality
-                }}
+                onValueChange={handleSeek}
                 className="w-full"
               />
               
@@ -286,7 +347,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                   <span className="text-xs text-muted-foreground">
-                    {useML ? "ML Analyzing" : "Analyzing"}
+                    {processorType === 'ml' ? "ML Analyzing" : processorType === 'meyda' ? "Meyda Analyzing" : "Basic Analyzing"}
                   </span>
                 </div>
               </div>
@@ -312,7 +373,8 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
               <Upload size={24} className="text-muted-foreground mb-2" />
               <p className="text-muted-foreground">No audio file selected</p>
               <p className="text-xs text-muted-foreground mt-1">Upload an audio file to begin analysis</p>
-              {useML && <p className="text-xs text-primary mt-2">Using GPU-accelerated ML detection</p>}
+              {processorType === 'ml' && <p className="text-xs text-primary mt-2">Using GPU-accelerated ML detection</p>}
+              {processorType === 'meyda' && <p className="text-xs text-primary mt-2">Using professional Meyda audio analysis</p>}
             </div>
           )
         )}
