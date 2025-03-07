@@ -1,6 +1,5 @@
 
-import * as Essentia from 'essentia.js';
-
+import Essentia from 'essentia.js';
 import { AudioFeatures } from './audioProcessor';
 
 class EssentiaAudioProcessor {
@@ -15,9 +14,9 @@ class EssentiaAudioProcessor {
   private startTime: number = 0;
   private pauseTime: number = 0;
   private audioElement: HTMLAudioElement | null = null;
-  private audioDataBuffer: Float32Array = new Float32Array(0);
   private frameSize: number = 2048;
   private hopSize: number = 1024;
+  private scriptProcessor: ScriptProcessorNode | null = null;
   
   // Feature extraction configuration
   private lastFeatures: AudioFeatures = {
@@ -51,8 +50,8 @@ class EssentiaAudioProcessor {
 
   private async initEssentia() {
     try {
-      // Initialize Essentia.js
-      this.essentia = await Essentia.EssentiaWASM();
+      // Initialize Essentia.js - correctly using the imported library
+      this.essentia = await new Essentia();
       console.log('Essentia.js initialized successfully');
     } catch (error) {
       console.error('Failed to initialize Essentia.js:', error);
@@ -132,19 +131,22 @@ class EssentiaAudioProcessor {
       this.mediaSource.disconnect();
     }
     
+    // Clean up previous script processor
+    if (this.scriptProcessor) {
+      this.scriptProcessor.disconnect();
+    }
+    
     // Create media source from audio element
     this.mediaSource = this.audioContext.createMediaElementSource(this.audioElement);
     this.mediaSource.connect(this.gainNode!);
     
     // Setup a ScriptProcessorNode for real-time analysis
-    // Note: ScriptProcessorNode is deprecated but still widely used;
-    // replace with AudioWorkletNode in production
-    const scriptNode = this.audioContext.createScriptProcessor(this.frameSize, 1, 1);
-    this.mediaSource.connect(scriptNode);
-    scriptNode.connect(this.audioContext.destination);
+    this.scriptProcessor = this.audioContext.createScriptProcessor(this.frameSize, 1, 1);
+    this.mediaSource.connect(this.scriptProcessor);
+    this.scriptProcessor.connect(this.audioContext.destination);
     
     // Process audio in real-time
-    scriptNode.onaudioprocess = (audioProcessingEvent) => {
+    this.scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
       const inputBuffer = audioProcessingEvent.inputBuffer;
       const inputData = inputBuffer.getChannelData(0);
       
@@ -154,114 +156,150 @@ class EssentiaAudioProcessor {
   }
   
   private processAudioData(audioData: Float32Array) {
-    if (!this.essentia) return;
+    if (!this.essentia || !this.analyser) return;
     
     try {
-      // Create a copy of the audio data to avoid modifications to the original buffer
-      const audioDataCopy = new Float32Array(audioData);
+      // Get frequency data from analyzer
+      const frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+      this.analyser.getByteFrequencyData(frequencyData);
       
-      // Extract spectrum using Essentia
-      const frame = this.essentia.arrayToVector(audioDataCopy);
-      const spectrum = this.essentia.Spectrum(frame, this.frameSize, this.frameSize, false, 'hann');
-      
-      // Get magnitude spectrum for band energy calculations
-      const magnitudeSpectrum = spectrum.magnitude;
-      
-      // Calculate band energy for each percussion element
-      const kickBandEnergy = this.calculateBandEnergy(
-        magnitudeSpectrum, 
-        this.ranges.kick.min, 
-        this.ranges.kick.max, 
-        this.audioContext!.sampleRate, 
-        this.frameSize
-      );
-      
-      const snareLowBandEnergy = this.calculateBandEnergy(
-        magnitudeSpectrum, 
-        this.ranges.snare.min, 
-        this.ranges.snare.max, 
-        this.audioContext!.sampleRate, 
-        this.frameSize
-      );
-      
-      const snareHighBandEnergy = this.calculateBandEnergy(
-        magnitudeSpectrum, 
-        this.ranges.snareCrack.min, 
-        this.ranges.snareCrack.max, 
-        this.audioContext!.sampleRate, 
-        this.frameSize
-      );
-      
-      const hihatBandEnergy = this.calculateBandEnergy(
-        magnitudeSpectrum, 
-        this.ranges.hihat.min, 
-        this.ranges.hihat.max, 
-        this.audioContext!.sampleRate, 
-        this.frameSize
-      );
-      
-      // Advanced percussion detection algorithms
-      
-      // Using Exponential Moving Average for smoother transitions
-      const alpha = 0.3; // Smoothing factor
-      
-      // Kick detection: strong low frequency content
-      this.kickEnergy = alpha * kickBandEnergy + (1 - alpha) * this.kickEnergy;
-      
-      // Snare detection: combination of mid-low body and high crack
-      const snareEnergy = snareLowBandEnergy * 0.3 + snareHighBandEnergy * 0.7;
-      this.snareEnergy = alpha * snareEnergy + (1 - alpha) * this.snareEnergy;
-      
-      // Hi-hat detection: high frequency content
-      this.hihatEnergy = alpha * hihatBandEnergy + (1 - alpha) * this.hihatEnergy;
-      
-      // Calculate spectral centroid for bass/mid/treble balance
-      const spectralCentroid = this.essentia.SpectralCentroid(magnitudeSpectrum);
-      
-      // Calculate overall energy
-      const rms = this.essentia.RMS(frame);
-      
-      // Update features with normalized values
-      this.lastFeatures = {
-        // Normalize values to 0-1 range
-        kick: Math.min(1, this.kickEnergy * 5),
-        snare: Math.min(1, this.snareEnergy * 5),
-        hihat: Math.min(1, this.hihatEnergy * 5),
-        bass: this.mapRange(spectralCentroid.spectralCentroid, 0, 500, 1, 0), // Bass is inverse of spectral centroid
-        mids: this.calculateBandEnergy(magnitudeSpectrum, 250, 2000, this.audioContext!.sampleRate, this.frameSize) * 3,
-        treble: this.calculateBandEnergy(magnitudeSpectrum, 2000, 16000, this.audioContext!.sampleRate, this.frameSize) * 3,
-        energy: Math.min(1, rms.rms * 3),
-        rhythm: (this.kickEnergy * 0.6 + this.snareEnergy * 0.4) * 5 // Rhythm is weighted kick+snare
-      };
-      
-      // Free Essentia vectors to prevent memory leaks
-      this.essentia.freeVector(frame);
-      this.essentia.freeVector(magnitudeSpectrum);
-      
+      // Extract beat features using Essentia
+      if (this.essentia.algorithmsByName && this.essentia.algorithmsByName.RhythmExtractor) {
+        // Use Essentia's RhythmExtractor if available
+        const audioVector = this.essentia.arrayToVector(audioData);
+        const rhythmFeatures = this.essentia.RhythmExtractor(audioVector);
+        
+        // Extract beats information if available
+        if (rhythmFeatures.beats) {
+          // Process beat information
+          console.log('Detected beats:', rhythmFeatures.beats.size());
+        }
+      } else {
+        // Fallback to manual frequency band analysis
+        this.analyzeFrequencyBands(frequencyData);
+      }
     } catch (error) {
-      console.error("Error processing audio data with Essentia:", error);
+      // Fallback to manual frequency band analysis on error
+      console.warn("Essentia algorithm error, falling back to manual analysis:", error);
+      if (this.analyser) {
+        const frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+        this.analyser.getByteFrequencyData(frequencyData);
+        this.analyzeFrequencyBands(frequencyData);
+      }
+    }
+  }
+  
+  private analyzeFrequencyBands(frequencyData: Uint8Array) {
+    if (!this.audioContext || !this.analyser) return;
+    
+    const sampleRate = this.audioContext.sampleRate;
+    const binCount = this.analyser.frequencyBinCount;
+    
+    // Calculate frequency band energy
+    const kickBandEnergy = this.calculateBandEnergy(
+      frequencyData,
+      this.ranges.kick.min, 
+      this.ranges.kick.max, 
+      sampleRate,
+      binCount
+    );
+    
+    const snareLowBandEnergy = this.calculateBandEnergy(
+      frequencyData,
+      this.ranges.snare.min, 
+      this.ranges.snare.max,
+      sampleRate,
+      binCount
+    );
+    
+    const snareHighBandEnergy = this.calculateBandEnergy(
+      frequencyData,
+      this.ranges.snareCrack.min, 
+      this.ranges.snareCrack.max,
+      sampleRate,
+      binCount
+    );
+    
+    const hihatBandEnergy = this.calculateBandEnergy(
+      frequencyData,
+      this.ranges.hihat.min, 
+      this.ranges.hihat.max,
+      sampleRate,
+      binCount
+    );
+    
+    // Use Exponential Moving Average for smoother transitions
+    const alpha = 0.3; // Smoothing factor
+    
+    // Kick detection with threshold
+    const kickThreshold = 0.15;
+    this.kickEnergy = alpha * (kickBandEnergy > kickThreshold ? kickBandEnergy : 0) + (1 - alpha) * this.kickEnergy;
+    
+    // Snare detection: combination of mid-low body and high crack
+    const snareEnergy = snareLowBandEnergy * 0.3 + snareHighBandEnergy * 0.7;
+    const snareThreshold = 0.12;
+    this.snareEnergy = alpha * (snareEnergy > snareThreshold ? snareEnergy : 0) + (1 - alpha) * this.snareEnergy;
+    
+    // Hi-hat detection
+    const hihatThreshold = 0.10;
+    this.hihatEnergy = alpha * (hihatBandEnergy > hihatThreshold ? hihatBandEnergy : 0) + (1 - alpha) * this.hihatEnergy;
+    
+    // Calculate overall energy
+    let totalEnergy = 0;
+    for (let i = 0; i < frequencyData.length; i++) {
+      totalEnergy += frequencyData[i] / 255;
+    }
+    totalEnergy /= frequencyData.length;
+    
+    // Bass, mids, treble energy
+    const bassEnergy = this.calculateBandEnergy(frequencyData, 60, 250, sampleRate, binCount);
+    const midsEnergy = this.calculateBandEnergy(frequencyData, 250, 2000, sampleRate, binCount);
+    const trebleEnergy = this.calculateBandEnergy(frequencyData, 2000, 16000, sampleRate, binCount);
+    
+    // Update features with normalized values
+    this.lastFeatures = {
+      kick: Math.min(1, this.kickEnergy * 5),
+      snare: Math.min(1, this.snareEnergy * 5),
+      hihat: Math.min(1, this.hihatEnergy * 5),
+      bass: Math.min(1, bassEnergy * 3),
+      mids: Math.min(1, midsEnergy * 3),
+      treble: Math.min(1, trebleEnergy * 3),
+      energy: Math.min(1, totalEnergy * 3),
+      rhythm: Math.min(1, (this.kickEnergy * 0.6 + this.snareEnergy * 0.4) * 5) // Rhythm is weighted kick+snare
+    };
+    
+    // Log feature values for debugging
+    if (Math.random() < 0.01) { // Log only 1% of the time to avoid console spam
+      console.log('Audio features:', { 
+        kick: this.lastFeatures.kick.toFixed(2),
+        snare: this.lastFeatures.snare.toFixed(2),
+        hihat: this.lastFeatures.hihat.toFixed(2)
+      });
     }
   }
   
   private calculateBandEnergy(
-    spectrum: Float32Array, 
+    frequencyData: Uint8Array, 
     minFreq: number, 
     maxFreq: number, 
-    sampleRate: number, 
-    frameSize: number
+    sampleRate: number,
+    binCount: number
   ): number {
     // Convert frequencies to bin indices
-    const minBin = Math.floor(minFreq * frameSize / sampleRate);
-    const maxBin = Math.ceil(maxFreq * frameSize / sampleRate);
+    const nyquist = sampleRate / 2;
+    const minBin = Math.floor((minFreq / nyquist) * binCount);
+    const maxBin = Math.ceil((maxFreq / nyquist) * binCount);
     
     // Ensure bins are within valid range
     const validMinBin = Math.max(0, minBin);
-    const validMaxBin = Math.min(spectrum.length - 1, maxBin);
+    const validMaxBin = Math.min(binCount - 1, maxBin);
     
-    // Sum squared magnitude within the frequency range
+    if (validMaxBin <= validMinBin) return 0;
+    
+    // Sum energy within the frequency range
     let energy = 0;
     for (let i = validMinBin; i <= validMaxBin; i++) {
-      energy += spectrum[i] * spectrum[i];
+      energy += frequencyData[i] / 255; // Normalize to 0-1
     }
     
     // Normalize by the number of bins
@@ -310,16 +348,6 @@ class EssentiaAudioProcessor {
     this.pauseTime = 0;
   }
 
-  public setVolume(volume: number) {
-    if (this.gainNode) {
-      this.gainNode.gain.value = volume;
-    }
-    
-    if (this.audioElement) {
-      this.audioElement.volume = volume;
-    }
-  }
-  
   public seekTo(time: number) {
     if (!this.audioElement) return;
     
@@ -328,6 +356,16 @@ class EssentiaAudioProcessor {
     
     if (this.isPlaying) {
       this.startTime = this.audioContext!.currentTime - time;
+    }
+  }
+
+  public setVolume(volume: number) {
+    if (this.gainNode) {
+      this.gainNode.gain.value = volume;
+    }
+    
+    if (this.audioElement) {
+      this.audioElement.volume = volume;
     }
   }
 
