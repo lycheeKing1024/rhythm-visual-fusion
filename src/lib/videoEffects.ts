@@ -1,4 +1,3 @@
-
 export type EffectType = 'none' | 'noise' | 'displacement' | 'pixelate' | 'rgb' | 'blur' | 'shake';
 
 export interface Effect {
@@ -77,10 +76,10 @@ export const EFFECTS: Record<EffectType, Effect> = {
     type: 'shake',
     name: 'Shake',
     icon: '📳',
-    description: 'Shakes the video on kick drum hits',
+    description: 'Camera shake effect triggered by kick drum',
     minValue: 0,
-    maxValue: 30,
-    defaultValue: 10,
+    maxValue: 50,
+    defaultValue: 20,
     audioFeature: 'kick'
   }
 };
@@ -363,16 +362,20 @@ class VideoEffects {
     // Clear the canvas
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     
-    // Calculate random shake offset based on intensity
-    const shakeX = (Math.random() - 0.5) * intensity * 2;
-    const shakeY = (Math.random() - 0.5) * intensity * 2;
+    // Calculate shake intensity based on kick drum energy
+    const maxOffset = intensity; // Increased maximum offset
+    const shakeX = (Math.random() - 0.5) * maxOffset;
+    const shakeY = (Math.random() - 0.5) * maxOffset;
     
-    // Draw video with offset
+    // Apply the shake effect more dramatically
+    this.ctx.save();
+    this.ctx.translate(shakeX, shakeY);
     this.ctx.drawImage(
-      this.video, 
+      this.video,
       0, 0, this.video.videoWidth, this.video.videoHeight,
-      shakeX, shakeY, this.canvas.width, this.canvas.height
+      0, 0, this.canvas.width, this.canvas.height
     );
+    this.ctx.restore();
   }
 
   public updateMapping(index: number, updates: Partial<Mapping>) {
