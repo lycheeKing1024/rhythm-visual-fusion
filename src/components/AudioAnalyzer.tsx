@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Upload, Volume2, Cpu, Music, Waveform } from 'lucide-react';
+import { Play, Pause, Upload, Volume2, Cpu, Music, WaveformIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
@@ -27,7 +26,6 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     kick: 0, snare: 0, hihat: 0, bass: 0, mids: 0, treble: 0, energy: 0, rhythm: 0
   });
 
-  // Initialize ML model if needed
   useEffect(() => {
     const loadMLModel = async () => {
       if (processorType === 'ml' && !isMLLoaded) {
@@ -41,14 +39,12 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     loadMLModel();
   }, [processorType, isMLLoaded]);
 
-  // Format time in mm:ss
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Handle file upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
@@ -81,9 +77,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     }
   };
 
-  // Handle processor toggle
   const switchProcessor = async (newType: 'basic' | 'ml' | 'meyda') => {
-    // Stop playback before switching processors
     if (isPlaying) {
       switch (processorType) {
         case 'ml': mlAudioProcessor.pause(); break;
@@ -100,7 +94,6 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     
     setProcessorType(newType);
     
-    // If we have an audio file, reload it with the new processor
     if (audioFile) {
       setIsLoading(true);
       let success;
@@ -129,7 +122,6 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     }
   };
 
-  // Handle playback controls
   const togglePlayback = () => {
     if (isPlaying) {
       switch (processorType) {
@@ -155,25 +147,21 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     }
   };
 
-  // Handle seeking
   const handleSeek = (value: number[]) => {
     const seekTime = value[0];
     
     switch (processorType) {
       case 'ml':
-        // ML processor doesn't support seeking yet
         break;
       case 'meyda':
         meydaAudioProcessor.seekTo(seekTime);
         setCurrentTime(seekTime);
         break;
       default:
-        // Basic processor doesn't support seeking yet
         break;
     }
   };
 
-  // Update volume
   useEffect(() => {
     switch (processorType) {
       case 'ml': mlAudioProcessor.setVolume(volume); break;
@@ -182,7 +170,6 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     }
   }, [volume, processorType]);
 
-  // Update playback time and visualizer
   const updatePlayback = async () => {
     let playbackState;
     let audioFeatures;
@@ -203,11 +190,9 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     
     setCurrentTime(playbackState.currentTime);
     
-    // Update features and notify parent
     setFeatures(audioFeatures);
     onFeaturesUpdate(audioFeatures);
     
-    // Continue animation loop if still playing
     if (playbackState.isPlaying) {
       animationRef.current = requestAnimationFrame(updatePlayback);
     } else {
@@ -215,7 +200,6 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     }
   };
 
-  // Clean up on unmount
   useEffect(() => {
     return () => {
       if (animationRef.current) {
@@ -244,7 +228,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
                       disabled={isLoading}
                       className="px-2 py-1 h-auto"
                     >
-                      <Waveform size={14} className="mr-1" />
+                      <WaveformIcon size={14} className="mr-1" />
                       <span className="text-xs">Basic</span>
                     </Button>
                     <Button 

@@ -1,12 +1,12 @@
 
-import Meyda from 'meyda';
+import * as Meyda from 'meyda';
 import { AudioFeatures } from './audioProcessor';
 
 class MeydaAudioProcessor {
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private gainNode: GainNode | null = null;
-  private meydaAnalyzer: Meyda.MeydaAnalyzer | null = null;
+  private meydaAnalyzer: any | null = null;
   private isPlaying: boolean = false;
   private audioSource: AudioBufferSourceNode | null = null;
   private mediaSource: MediaElementAudioSourceNode | null = null;
