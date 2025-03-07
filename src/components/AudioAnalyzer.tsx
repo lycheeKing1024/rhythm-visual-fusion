@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Upload, Volume2, Cpu, Music, WaveIcon } from 'lucide-react';
+import { Play, Pause, Upload, Volume2, Cpu, Music, WavesIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
@@ -228,7 +228,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
                       disabled={isLoading}
                       className="px-2 py-1 h-auto"
                     >
-                      <WaveIcon size={14} className="mr-1" />
+                      <WavesIcon size={14} className="mr-1" />
                       <span className="text-xs">Basic</span>
                     </Button>
                     
@@ -358,7 +358,7 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
             <div className="bg-muted/30 border border-dashed border-muted rounded-md p-6 flex flex-col items-center justify-center text-center animate-pulse">
               <Upload size={24} className="text-muted-foreground mb-2" />
               <p className="text-muted-foreground">No audio file selected</p>
-              <p className="text-xs text-muted-foreground mt-1">Upload an audio file to begin analysis</p>
+              <p className="text-muted-foreground mt-1">Upload an audio file to begin analysis</p>
               {processorType === 'ml' && <p className="text-xs text-primary mt-2">Using GPU-accelerated ML detection</p>}
               {processorType === 'meyda' && <p className="text-xs text-primary mt-2">Using professional Meyda audio analysis</p>}
             </div>
