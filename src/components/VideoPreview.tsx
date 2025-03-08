@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, LayoutPanelLeft } from 'lucide-react';
 import videoEffects from '@/lib/videoEffects';
@@ -74,10 +75,9 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures, isAudioPlayi
         // Initialize video effects with our canvas and video
         videoEffects.setupCanvas(canvas, video);
         
-        // Use a ref to ensure we always get the latest audio features
+        // Processing with TD-like workflow
         videoEffects.startProcessing(() => {
-          // Convert AudioFeatures to Record<string, number> by explicitly creating an object
-          // Always use the current ref value to get the latest audio features
+          // Get latest audio features from ref
           const currentFeatures = audioFeaturesRef.current;
           console.log('currentFeatures', currentFeatures);
           // 如果音频暂停，返回所有参数为0的效果
@@ -93,6 +93,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures, isAudioPlayi
               rhythm: 0
             };
           }
+          
           return {
             kick: currentFeatures.kick,
             snare: currentFeatures.snare,
@@ -108,7 +109,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures, isAudioPlayi
         // Loop the video
         video.loop = true;
         
-        // Ensure the video has enough frames for the Time Machine effect
+        // Set playback rate to match audio better
         video.playbackRate = 1.0;
       };
       
@@ -124,7 +125,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures, isAudioPlayi
     }
   }, [videoSrc]);
 
-  // 监听音频播放状态变化
+  // Monitor audio playback state changes
   useEffect(() => {
     if (videoRef.current) {
       const video = videoRef.current;
