@@ -75,10 +75,9 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures, isAudioPlayi
         // Initialize video effects with our canvas and video
         videoEffects.setupCanvas(canvas, video);
         
-        // Use a ref to ensure we always get the latest audio features
+        // Processing with TD-like workflow
         videoEffects.startProcessing(() => {
-          // Convert AudioFeatures to Record<string, number> by explicitly creating an object
-          // Always use the current ref value to get the latest audio features
+          // Get latest audio features from ref
           const currentFeatures = audioFeaturesRef.current;
           
           // If audio is paused, return all parameters as 0
