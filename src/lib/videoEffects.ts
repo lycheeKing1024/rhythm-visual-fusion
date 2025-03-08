@@ -132,7 +132,7 @@ class VideoEffects {
   public resetConfig() {
     this.config = {
       mappings: [
-        { audioFeature: 'kick', effectType: 'horizontalMove', intensity: 20, enabled: true },
+        { audioFeature: 'kick', effectType: 'shake', intensity: 20, enabled: true },
         { audioFeature: 'snare', effectType: 'noise', intensity: 0.2, enabled: false },
         { audioFeature: 'bass', effectType: 'pixelate', intensity: 20, enabled: false },
         { audioFeature: 'mids', effectType: 'rgb', intensity: 5, enabled: false },
