@@ -124,6 +124,9 @@ class VideoEffects {
   private animationFrameId: number | null = null;
   private frameHistory: ImageData[] = [];
   private maxHistoryLength = 30;
+  private lastShakeX: number = 0;
+  private targetShakeX: number = 0;
+  private shakeVelocity: number = 0;
 
   constructor() {
     this.resetConfig();
@@ -449,11 +452,21 @@ class VideoEffects {
     
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     
-    const maxOffset = intensity;
-    const shakeX = (Math.random() - 0.5) * maxOffset;
+    const maxOffset = this.canvas.width * 0.002;
+    this.targetShakeX = (intensity - 0.5) * maxOffset;
+    
+    const spring = 0.12;
+    const friction = 0.92;
+    
+    const distance = this.targetShakeX - this.lastShakeX;
+    
+    this.shakeVelocity += distance * spring;
+    this.shakeVelocity *= friction;
+    
+    this.lastShakeX += this.shakeVelocity;
     
     this.ctx.save();
-    this.ctx.translate(shakeX, 0);
+    this.ctx.translate(this.lastShakeX, 0);
     this.ctx.drawImage(
       this.video,
       0, 0, this.video.videoWidth, this.video.videoHeight,
