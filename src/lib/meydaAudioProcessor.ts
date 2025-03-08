@@ -1,4 +1,6 @@
-import Essentia from 'essentia.js';
+
+import { Essentia,EssentiaWASM } from 'essentia.js';
+
 import { AudioFeatures } from './audioProcessor';
 
 class EssentiaAudioProcessor {
@@ -44,13 +46,18 @@ class EssentiaAudioProcessor {
   
   constructor() {
     this.initAudioContext();
-    this.initEssentia();
+  }
+
+  public async initialize() {
+    await this.initEssentia();
   }
 
   private async initEssentia() {
     try {
-      // Initialize Essentia.js - correctly using the imported library
-      this.essentia = await new Essentia();
+      // 先初始化 WASM 模块
+     const  EssentiaWasm = await EssentiaWASM;
+      // 创建 Essentia 实例
+      this.essentia = new Essentia(EssentiaWasm.EssentiaWASM,true);
       console.log('Essentia.js initialized successfully');
     } catch (error) {
       console.error('Failed to initialize Essentia.js:', error);
@@ -77,6 +84,10 @@ class EssentiaAudioProcessor {
   }
   
   public async loadAudio(file: File): Promise<boolean> {
+    if (!this.essentia) {
+      await this.initialize();
+    }
+    
     if (!this.audioContext) {
       this.initAudioContext();
       if (!this.audioContext) return false;
