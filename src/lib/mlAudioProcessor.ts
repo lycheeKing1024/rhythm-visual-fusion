@@ -13,6 +13,7 @@ class MLAudioProcessor {
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private gainNode: GainNode | null = null;
+  private lowPassFilter: BiquadFilterNode | null = null;
   private isPlaying: boolean = false;
   private audioSource: AudioBufferSourceNode | null = null;
   private audioBuffer: AudioBuffer | null = null;
@@ -26,6 +27,13 @@ class MLAudioProcessor {
   private fftSize: number = 2048;
   private modelInitPromise: Promise<boolean> | null = null;
   
+  private lastFeatures: AudioFeatures = {
+    kick: 0, snare: 0, hihat: 0, bass: 0, mids: 0, treble: 0, energy: 0, rhythm: 0
+  };
+  private smoothingFactor = 0.8;
+  private kickThreshold = 0.15;
+  private snareThreshold = 0.12;
+  
   constructor() {
     this.initAudioContext();
   }
@@ -37,10 +45,16 @@ class MLAudioProcessor {
       this.analyser.fftSize = this.fftSize;
       this.gainNode = this.audioContext.createGain();
       
-      this.spectrogramData = new Float32Array(this.analyser.frequencyBinCount);
+      this.lowPassFilter = this.audioContext.createBiquadFilter();
+      this.lowPassFilter.type = 'lowpass';
+      this.lowPassFilter.frequency.value = 150;
+      this.lowPassFilter.Q.value = 1;
       
-      this.gainNode.connect(this.analyser);
+      this.gainNode.connect(this.lowPassFilter);
+      this.lowPassFilter.connect(this.analyser);
       this.analyser.connect(this.audioContext.destination);
+      
+      this.spectrogramData = new Float32Array(this.analyser.frequencyBinCount);
     } catch (error) {
       console.error("AudioContext not supported or error initializing", error);
     }
@@ -54,22 +68,41 @@ class MLAudioProcessor {
     
     this.modelInitPromise = new Promise(async (resolve) => {
       try {
-        console.log("Loading ML audio analysis model with WebGPU...");
+        console.log("尝试加载ML音频分析模型...");
         
-        this.mlModel = await pipeline(
-          "audio-classification",
-          "MIT/ast-finetuned-audioset-10-10-0.4593", 
-          { device: "webgpu" }
-        );
+        // 首先尝试使用WebGPU
+        try {
+          this.mlModel = await pipeline(
+            "audio-classification",
+            "MIT/ast-finetuned-audioset-10-10-0.4593",
+            { device: "webgpu" }
+          );
+          console.log("成功使用WebGPU加载模型");
+        } catch (gpuError) {
+          console.log("WebGPU不可用，尝试使用CPU...");
+          // 如果WebGPU失败，回退到CPU
+          try {
+            this.mlModel = await pipeline(
+              "audio-classification",
+              "MIT/ast-finetuned-audioset-10-10-0.4593",
+              { device: "cpu" }
+            );
+            console.log("成功使用CPU加载模型");
+          } catch (cpuError) {
+            // 如果CPU也失败，记录错误并继续
+            console.error("CPU加载也失败:", cpuError);
+            console.log("将使用基础音频分析方法");
+          }
+        }
         
-        this.isModelLoaded = true;
+        this.isModelLoaded = this.mlModel !== null;
         this.isLoadingModel = false;
-        console.log("ML audio analysis model loaded successfully");
-        resolve(true);
+        resolve(this.isModelLoaded);
       } catch (error) {
-        console.error("Failed to load ML audio model:", error);
+        console.error("加载ML音频模型失败:", error);
         this.isLoadingModel = false;
-        resolve(false);
+        // 即使模型加载失败也返回true，因为我们可以回退到基础分析
+        resolve(true);
       }
     });
     
@@ -258,7 +291,7 @@ class MLAudioProcessor {
   
   private performBasicAnalysis(frequencyData: Float32Array): AudioFeatures {
     const bands = {
-      kick: { min: 40, max: 120 },
+      kick: { min: 40, max: 100 },
       snare: { min: 120, max: 250 },
       hihat: { min: 8000, max: 16000 },
       bass: { min: 60, max: 250 },
@@ -269,7 +302,7 @@ class MLAudioProcessor {
     const nyquist = this.audioContext?.sampleRate ? this.audioContext.sampleRate / 2 : 22050;
     const binCount = frequencyData.length;
     
-    const features: AudioFeatures = {
+    const rawFeatures: AudioFeatures = {
       kick: this.getAverageForBand(frequencyData, bands.kick.min, bands.kick.max, nyquist, binCount),
       snare: this.getAverageForBand(frequencyData, bands.snare.min, bands.snare.max, nyquist, binCount),
       hihat: this.getAverageForBand(frequencyData, bands.hihat.min, bands.hihat.max, nyquist, binCount),
@@ -280,11 +313,30 @@ class MLAudioProcessor {
       rhythm: 0
     };
     
-    features.energy = this.calculateEnergy(frequencyData);
+    const features: AudioFeatures = {
+      kick: this.smoothValue(rawFeatures.kick, this.lastFeatures.kick),
+      snare: this.smoothValue(rawFeatures.snare, this.lastFeatures.snare),
+      hihat: this.smoothValue(rawFeatures.hihat, this.lastFeatures.hihat),
+      bass: this.smoothValue(rawFeatures.bass, this.lastFeatures.bass),
+      mids: this.smoothValue(rawFeatures.mids, this.lastFeatures.mids),
+      treble: this.smoothValue(rawFeatures.treble, this.lastFeatures.treble),
+      energy: 0,
+      rhythm: 0
+    };
     
+    features.kick = features.kick > this.kickThreshold ? features.kick : 0;
+    features.snare = features.snare > this.snareThreshold ? features.snare : 0;
+    
+    features.energy = this.calculateEnergy(frequencyData);
     features.rhythm = this.calculateRhythm(features.kick, features.snare);
     
+    this.lastFeatures = { ...features };
+    
     return features;
+  }
+  
+  private smoothValue(currentValue: number, lastValue: number): number {
+    return this.smoothingFactor * lastValue + (1 - this.smoothingFactor) * currentValue;
   }
   
   private getAverageForBand(
@@ -298,16 +350,20 @@ class MLAudioProcessor {
     const highBin = Math.floor((maxFreq / nyquist) * binCount);
     
     let sum = 0;
+    let peak = -Infinity;
     const binRange = highBin - lowBin;
     
     if (binRange <= 0) return 0;
     
     for (let i = lowBin; i <= highBin; i++) {
       const amplitude = (frequencyData[i] + 100) / 100;
-      sum += Math.max(0, Math.min(1, amplitude));
+      const value = Math.max(0, Math.min(1, amplitude));
+      sum += value;
+      peak = Math.max(peak, value);
     }
     
-    return sum / binRange;
+    const average = sum / binRange;
+    return (average * 0.6 + peak * 0.4);
   }
   
   private calculateEnergy(frequencyData: Float32Array): number {
@@ -321,7 +377,9 @@ class MLAudioProcessor {
   }
   
   private calculateRhythm(kick: number, snare: number): number {
-    return Math.pow(kick, 1.5) * 0.7 + Math.pow(snare, 1.5) * 0.3;
+    const kickWeight = Math.pow(kick, 1.8);
+    const snareWeight = Math.pow(snare, 1.5);
+    return kickWeight * 0.7 + snareWeight * 0.3;
   }
 }
 
