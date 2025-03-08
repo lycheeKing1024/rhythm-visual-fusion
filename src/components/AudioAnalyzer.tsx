@@ -10,9 +10,10 @@ import essentiaAudioProcessor from '@/lib/meydaAudioProcessor';
 
 interface AudioAnalyzerProps {
   onFeaturesUpdate: (features: AudioFeatures) => void;
+  onPlaybackStateChange: (isPlaying: boolean) => void;
 }
 
-const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
+const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate, onPlaybackStateChange }) => {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -38,6 +39,10 @@ const AudioAnalyzer: React.FC<AudioAnalyzerProps> = ({ onFeaturesUpdate }) => {
     
     loadMLModel();
   }, [processorType, isMLLoaded]);
+
+  useEffect(() => {
+    onPlaybackStateChange(isPlaying);
+  }, [isPlaying, onPlaybackStateChange]);
 
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);

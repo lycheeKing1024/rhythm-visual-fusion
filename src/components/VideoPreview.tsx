@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, LayoutPanelLeft } from 'lucide-react';
 import videoEffects from '@/lib/videoEffects';
@@ -6,9 +5,10 @@ import { AudioFeatures } from '@/lib/audioProcessor';
 
 interface VideoPreviewProps {
   audioFeatures: AudioFeatures;
+  isAudioPlaying: boolean;
 }
 
-const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures }) => {
+const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures, isAudioPlaying }) => {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoSrc, setVideoSrc] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -16,11 +16,17 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioFeaturesRef = useRef<AudioFeatures>(audioFeatures);
+  const isPlayingRef = useRef<boolean>(isAudioPlaying);
   
   // Update audioFeaturesRef whenever audioFeatures changes
   useEffect(() => {
     audioFeaturesRef.current = audioFeatures;
   }, [audioFeatures]);
+
+  // Update isPlayingRef whenever isAudioPlaying changes
+  useEffect(() => {
+    isPlayingRef.current = isAudioPlaying;
+  }, [isAudioPlaying]);
   
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,6 +79,20 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures }) => {
           // Convert AudioFeatures to Record<string, number> by explicitly creating an object
           // Always use the current ref value to get the latest audio features
           const currentFeatures = audioFeaturesRef.current;
+          console.log('isAudioPlaying', isPlayingRef.current);
+          // 如果音频暂停，返回所有参数为0的效果
+          if (!isPlayingRef.current) {
+            return {
+              kick: 0,
+              snare: 0,
+              hihat: 0,
+              bass: 0,
+              mids: 0,
+              treble: 0,
+              energy: 0,
+              rhythm: 0
+            };
+          }
           return {
             kick: currentFeatures.kick,
             snare: currentFeatures.snare,
@@ -90,11 +110,6 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures }) => {
         
         // Ensure the video has enough frames for the Time Machine effect
         video.playbackRate = 1.0;
-        
-        // Play the video
-        video.play().catch(err => {
-          console.error('Error playing video:', err);
-        });
       };
       
       video.addEventListener('loadeddata', handleVideoLoad);
@@ -108,6 +123,20 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures }) => {
       };
     }
   }, [videoSrc]);
+
+  // 监听音频播放状态变化
+  useEffect(() => {
+    if (videoRef.current) {
+      const video = videoRef.current;
+      if (isAudioPlaying) {
+        video.play().catch(err => {
+          console.error('Error playing video:', err);
+        });
+      } else {
+        video.pause();
+      }
+    }
+  }, [isAudioPlaying]);
 
   return (
     <div className="glass-panel rounded-lg p-4 h-full w-full flex flex-col">

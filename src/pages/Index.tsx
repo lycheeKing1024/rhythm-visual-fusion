@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Header from '@/components/Header';
 import VideoPreview from '@/components/VideoPreview';
@@ -16,9 +15,14 @@ const Index = () => {
     energy: 0,
     rhythm: 0
   });
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
 
   const handleFeaturesUpdate = (features: AudioFeatures) => {
     setAudioFeatures(features);
+  };
+
+  const handlePlaybackStateChange = (isPlaying: boolean) => {
+    setIsAudioPlaying(isPlaying);
   };
 
   return (
@@ -27,11 +31,11 @@ const Index = () => {
       
       <main className="flex-1 container py-6 flex flex-col lg:flex-row gap-6">
         <div className="lg:w-2/3 w-full h-[50vh] lg:h-auto">
-          <VideoPreview audioFeatures={audioFeatures} />
+          <VideoPreview audioFeatures={audioFeatures} isAudioPlaying={isAudioPlaying} />
         </div>
         
         <div className="lg:w-1/3 w-full">
-          <ControlPanel onFeaturesUpdate={handleFeaturesUpdate} />
+          <ControlPanel onFeaturesUpdate={handleFeaturesUpdate} onPlaybackStateChange={handlePlaybackStateChange} />
         </div>
       </main>
       

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import AudioAnalyzer from './AudioAnalyzer';
 import EffectMapper from './EffectMapper';
@@ -13,12 +12,13 @@ import {
 
 interface ControlPanelProps {
   onFeaturesUpdate: (features: AudioFeatures) => void;
+  onPlaybackStateChange: (isPlaying: boolean) => void;
 }
 
-const ControlPanel: React.FC<ControlPanelProps> = ({ onFeaturesUpdate }) => {
+const ControlPanel: React.FC<ControlPanelProps> = ({ onFeaturesUpdate, onPlaybackStateChange }) => {
   return (
     <div className="flex flex-col gap-4 w-full">
-      <AudioAnalyzer onFeaturesUpdate={onFeaturesUpdate} />
+      <AudioAnalyzer onFeaturesUpdate={onFeaturesUpdate} onPlaybackStateChange={onPlaybackStateChange} />
       
       <EffectMapper />
       
