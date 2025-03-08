@@ -88,6 +88,9 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures }) => {
         // Loop the video
         video.loop = true;
         
+        // Ensure the video has enough frames for the Time Machine effect
+        video.playbackRate = 1.0;
+        
         // Play the video
         video.play().catch(err => {
           console.error('Error playing video:', err);
