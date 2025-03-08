@@ -1,3 +1,4 @@
+
 export type EffectType = 'none' | 'noise' | 'displacement' | 'timeMachine' | 'pixelate' | 'rgb' | 'blur' | 'shake';
 
 export interface Effect {
@@ -105,6 +106,115 @@ export interface VideoEffectConfig {
   mappings: Mapping[];
 }
 
+// TouchDesigner-like noise generator for displacement
+class NoiseGenerator {
+  private time: number = 0;
+  private resolution: { width: number, height: number } = { width: 512, height: 512 };
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  
+  constructor() {
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = this.resolution.width;
+    this.canvas.height = this.resolution.height;
+    this.ctx = this.canvas.getContext('2d')!;
+  }
+  
+  public updateResolution(width: number, height: number) {
+    this.resolution = { width, height };
+    this.canvas.width = width;
+    this.canvas.height = height;
+  }
+  
+  public generatePerlinNoise(time: number, frequency: number, amplitude: number): ImageData {
+    this.time = time;
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    // Draw perlin-like noise pattern
+    const cellSize = Math.max(2, Math.floor(10 / frequency));
+    
+    for (let y = 0; y < this.canvas.height; y += cellSize) {
+      for (let x = 0; x < this.canvas.width; x += cellSize) {
+        const noise = this.perlinValue(x * 0.01 * frequency, y * 0.01 * frequency, this.time) * 0.5 + 0.5;
+        const value = Math.floor(noise * 255 * amplitude);
+        
+        this.ctx.fillStyle = `rgb(${value},${value},${value})`;
+        this.ctx.fillRect(x, y, cellSize, cellSize);
+      }
+    }
+    
+    return this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+  }
+  
+  public generateRhythmicNoise(rhythm: number, energy: number, bass: number): ImageData {
+    this.time += 0.01;
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    // Base gradient for time displacement (emulating Ramp TOP)
+    const gradientType = Math.sin(this.time * 0.5) > 0 ? 'radial' : 'linear';
+    
+    if (gradientType === 'radial') {
+      const centerX = this.canvas.width / 2 + Math.sin(this.time) * this.canvas.width * 0.2 * rhythm;
+      const centerY = this.canvas.height / 2 + Math.cos(this.time * 0.7) * this.canvas.height * 0.2 * rhythm;
+      const radius = Math.min(this.canvas.width, this.canvas.height) * (0.3 + Math.sin(this.time * 0.2) * 0.2);
+      
+      const gradient = this.ctx.createRadialGradient(
+        centerX, centerY, 0,
+        centerX, centerY, radius * (1 + bass * 0.5)
+      );
+      
+      gradient.addColorStop(0, 'white');
+      gradient.addColorStop(1, 'black');
+      
+      this.ctx.fillStyle = gradient;
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    } else {
+      const angle = this.time * 0.5;
+      const startX = Math.cos(angle) * this.canvas.width * rhythm + this.canvas.width / 2;
+      const startY = Math.sin(angle) * this.canvas.height * rhythm + this.canvas.height / 2;
+      const endX = Math.cos(angle + Math.PI) * this.canvas.width * rhythm + this.canvas.width / 2;
+      const endY = Math.sin(angle + Math.PI) * this.canvas.height * rhythm + this.canvas.height / 2;
+      
+      const gradient = this.ctx.createLinearGradient(startX, startY, endX, endY);
+      gradient.addColorStop(0, 'white');
+      gradient.addColorStop(1, 'black');
+      
+      this.ctx.fillStyle = gradient;
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+    
+    // Add noise overlay based on energy
+    if (energy > 0.1) {
+      const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+      const data = imageData.data;
+      
+      for (let i = 0; i < data.length; i += 4) {
+        if (Math.random() > 0.7) {
+          const noise = (Math.random() - 0.5) * 255 * energy;
+          data[i] = Math.min(Math.max(data[i] + noise, 0), 255);
+          data[i + 1] = data[i];
+          data[i + 2] = data[i];
+        }
+      }
+      
+      this.ctx.putImageData(imageData, 0, 0);
+    }
+    
+    // Add beat response
+    if (rhythm > 0.7) {
+      this.ctx.fillStyle = `rgba(255, 255, 255, ${rhythm * 0.2})`;
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+    
+    return this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+  }
+  
+  private perlinValue(x: number, y: number, z: number): number {
+    // Simple noise function for demo purposes (not actual perlin)
+    return Math.sin(x * 10 + this.time) * Math.cos(y * 10 + this.time) * Math.sin(z * 10);
+  }
+}
+
 class VideoEffects {
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
@@ -114,6 +224,9 @@ class VideoEffects {
   private animationFrameId: number | null = null;
   private frameHistory: ImageData[] = [];
   private maxHistoryLength = 30;
+  private noiseGenerator: NoiseGenerator = new NoiseGenerator();
+  private lastAudioFeatures: Record<string, number> = {};
+  private effectOrder: EffectType[] = ['displacement', 'timeMachine', 'pixelate', 'rgb', 'blur', 'shake', 'noise'];
 
   constructor() {
     this.resetConfig();
@@ -159,6 +272,9 @@ class VideoEffects {
     
     this.canvas.width = width;
     this.canvas.height = height;
+    
+    // Update noise generator resolution for better performance
+    this.noiseGenerator.updateResolution(width, height);
   };
 
   public startProcessing(getAudioFeatures: () => Record<string, number>) {
@@ -173,24 +289,36 @@ class VideoEffects {
       }
       
       const audioFeatures = getAudioFeatures();
+      this.lastAudioFeatures = { ...audioFeatures };
       
+      // Clear canvas
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       
+      // Draw the base video frame
       this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
       
+      // Capture current frame for frame history
       const currentFrame = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
       
+      // Store in history
       this.frameHistory.unshift(currentFrame);
       if (this.frameHistory.length > this.maxHistoryLength) {
         this.frameHistory.pop();
       }
       
-      this.config.mappings.forEach(mapping => {
-        if (mapping.enabled && mapping.effectType !== 'none') {
-          const featureValue = audioFeatures[mapping.audioFeature] || 0;
-          this.applyEffect(mapping.effectType, featureValue, mapping.intensity);
-        }
-      });
+      // Apply effects in specific order (TouchDesigner-like node workflow)
+      const enabledMappings = this.config.mappings
+        .filter(mapping => mapping.enabled && mapping.effectType !== 'none')
+        .sort((a, b) => {
+          const orderA = this.effectOrder.indexOf(a.effectType);
+          const orderB = this.effectOrder.indexOf(b.effectType);
+          return orderA - orderB;
+        });
+      
+      for (const mapping of enabledMappings) {
+        const featureValue = audioFeatures[mapping.audioFeature] || 0;
+        this.applyEffect(mapping.effectType, featureValue, mapping.intensity);
+      }
       
       this.animationFrameId = requestAnimationFrame(render);
     };
@@ -212,42 +340,42 @@ class VideoEffects {
     const width = this.canvas.width;
     const height = this.canvas.height;
     
-    const imageData = this.ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-    
     const value = Math.min(Math.max(audioValue, 0), 1);
     
     switch (effectType) {
       case 'noise':
-        this.applyNoiseEffect(data, width, height, value * intensity);
+        this.applyNoiseEffect(value * intensity);
         break;
       case 'displacement':
-        this.applyDisplacementEffect(data, width, height, value * intensity);
+        this.applyAdvancedDisplacementEffect(value * intensity);
         break;
       case 'timeMachine':
-        this.applyTimeMachineEffect(value * intensity);
-        return;
+        this.applyAdvancedTimeMachineEffect(value * intensity);
+        break;
       case 'pixelate':
         this.applyPixelateEffect(value * intensity);
-        return;
+        break;
       case 'rgb':
-        this.applyRGBSplitEffect(data, width, height, value * intensity);
+        this.applyRGBSplitEffect(value * intensity);
         break;
       case 'blur':
         this.applyBlurEffect(value * intensity);
-        return;
+        break;
       case 'shake':
         this.applyShakeEffect(value * intensity);
-        return;
+        break;
       default:
         return;
     }
-    
-    this.ctx.putImageData(imageData, 0, 0);
   }
 
-  private applyNoiseEffect(data: Uint8ClampedArray, width: number, height: number, intensity: number) {
+  private applyNoiseEffect(intensity: number) {
+    if (!this.ctx || !this.canvas) return;
+    
+    const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+    const data = imageData.data;
     const length = data.length;
+    
     for (let i = 0; i < length; i += 4) {
       if (Math.random() > 0.5) {
         const noise = (Math.random() - 0.5) * intensity * 255;
@@ -256,105 +384,84 @@ class VideoEffects {
         data[i + 2] = Math.min(Math.max(data[i + 2] + noise, 0), 255);
       }
     }
+    
+    this.ctx.putImageData(imageData, 0, 0);
   }
 
-  private applyDisplacementEffect(data: Uint8ClampedArray, width: number, height: number, intensity: number) {
-    const originalData = new Uint8ClampedArray(data);
+  private applyAdvancedDisplacementEffect(intensity: number) {
+    if (!this.ctx || !this.canvas) return;
     
-    const time = Date.now() * 0.001;
+    const rhythm = this.lastAudioFeatures.rhythm || 0;
+    const energy = this.lastAudioFeatures.energy || 0;
+    const bass = this.lastAudioFeatures.bass || 0;
     
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const displaceX = Math.sin(y * 0.05 + time) * intensity;
-        const displaceY = Math.cos(x * 0.05 + time) * intensity;
+    // Generate noise pattern that will drive the displacement (like a displacement map TOP)
+    const noiseData = this.noiseGenerator.generateRhythmicNoise(rhythm, energy, bass);
+    
+    // Apply displacement using the noise as a map
+    const currentFrame = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+    const resultData = new Uint8ClampedArray(currentFrame.data.length);
+    
+    for (let y = 0; y < this.canvas.height; y++) {
+      for (let x = 0; x < this.canvas.width; x++) {
+        const pixelIndex = (y * this.canvas.width + x) * 4;
         
-        const newX = Math.floor(x + displaceX);
-        const newY = Math.floor(y + displaceY);
+        // Get displacement amount from noise
+        const noiseValue = noiseData.data[pixelIndex] / 255;
         
-        if (newX >= 0 && newX < width && newY >= 0 && newY < height) {
-          const origPos = (y * width + x) * 4;
-          const newPos = (newY * width + newX) * 4;
-          
-          data[origPos] = originalData[newPos];
-          data[origPos + 1] = originalData[newPos + 1];
-          data[origPos + 2] = originalData[newPos + 2];
-        }
+        // Calculate displacement
+        const displaceX = Math.sin(y * 0.05 + noiseValue * 10) * intensity * noiseValue;
+        const displaceY = Math.cos(x * 0.05 + noiseValue * 10) * intensity * noiseValue;
+        
+        const sourceX = Math.max(0, Math.min(this.canvas.width - 1, Math.floor(x + displaceX)));
+        const sourceY = Math.max(0, Math.min(this.canvas.height - 1, Math.floor(y + displaceY)));
+        
+        const sourceIndex = (sourceY * this.canvas.width + sourceX) * 4;
+        
+        // Copy the displaced pixel
+        resultData[pixelIndex] = currentFrame.data[sourceIndex];
+        resultData[pixelIndex + 1] = currentFrame.data[sourceIndex + 1];
+        resultData[pixelIndex + 2] = currentFrame.data[sourceIndex + 2];
+        resultData[pixelIndex + 3] = currentFrame.data[sourceIndex + 3];
       }
     }
+    
+    this.ctx.putImageData(new ImageData(resultData, this.canvas.width, this.canvas.height), 0, 0);
   }
 
-  private applyTimeMachineEffect(intensity: number) {
+  private applyAdvancedTimeMachineEffect(intensity: number) {
     if (!this.ctx || !this.canvas || this.frameHistory.length < 2) return;
     
-    const width = this.canvas.width;
-    const height = this.canvas.height;
+    const rhythm = this.lastAudioFeatures.rhythm || 0;
+    const kick = this.lastAudioFeatures.kick || 0;
     
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = width;
-    tempCanvas.height = height;
-    const tempCtx = tempCanvas.getContext('2d');
-    if (!tempCtx) return;
-
-    tempCtx.drawImage(this.canvas, 0, 0);
+    // Create a time displacement map (similar to TouchDesigner's Ramp TOP + Noise TOP)
+    const noiseData = this.noiseGenerator.generateRhythmicNoise(rhythm, 0.3, kick);
     
-    const gradientCanvas = document.createElement('canvas');
-    gradientCanvas.width = width;
-    gradientCanvas.height = height;
-    const gradientCtx = gradientCanvas.getContext('2d');
-    if (!gradientCtx) return;
+    // Set the range of frames to use (Black Offset and White Offset in TouchDesigner terms)
+    const maxFrameOffset = Math.min(Math.floor(intensity), this.frameHistory.length - 1);
+    const minFrameOffset = 0;
     
-    const time = Date.now() * 0.001;
-    const gradientType = Math.sin(time * 0.5) > 0;
+    // Get current frame
+    const currentFrameData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+    const resultData = new Uint8ClampedArray(currentFrameData.data);
     
-    if (gradientType) {
-      const centerX = width / 2 + Math.sin(time) * width * 0.3;
-      const centerY = height / 2 + Math.cos(time * 0.7) * height * 0.3;
-      const radius = Math.min(width, height) * (0.3 + Math.sin(time * 0.2) * 0.2);
-      
-      const gradient = gradientCtx.createRadialGradient(
-        centerX, centerY, 0,
-        centerX, centerY, radius
-      );
-      
-      gradient.addColorStop(0, 'white');
-      gradient.addColorStop(1, 'black');
-      
-      gradientCtx.fillStyle = gradient;
-      gradientCtx.fillRect(0, 0, width, height);
-    } else {
-      const angle = time * 0.5;
-      const startX = Math.cos(angle) * width + width / 2;
-      const startY = Math.sin(angle) * height + height / 2;
-      const endX = Math.cos(angle + Math.PI) * width + width / 2;
-      const endY = Math.sin(angle + Math.PI) * height + height / 2;
-      
-      const gradient = gradientCtx.createLinearGradient(startX, startY, endX, endY);
-      gradient.addColorStop(0, 'white');
-      gradient.addColorStop(1, 'black');
-      
-      gradientCtx.fillStyle = gradient;
-      gradientCtx.fillRect(0, 0, width, height);
-    }
-    
-    const gradientData = gradientCtx.getImageData(0, 0, width, height).data;
-    
-    const scaledIntensity = Math.floor(intensity * 0.5);
-    const maxOffset = Math.min(scaledIntensity, this.frameHistory.length - 1);
-    
-    const currentData = this.ctx.getImageData(0, 0, width, height);
-    const resultData = new Uint8ClampedArray(currentData.data);
-    
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const pixelIndex = (y * width + x) * 4;
+    // Apply time displacement
+    for (let y = 0; y < this.canvas.height; y++) {
+      for (let x = 0; x < this.canvas.width; x++) {
+        const pixelIndex = (y * this.canvas.width + x) * 4;
         
-        const offsetFactor = gradientData[pixelIndex] / 255;
+        // Use the noise data as a time displacement map (monochrome values determine time offset)
+        const timeOffsetFactor = noiseData.data[pixelIndex] / 255;
         
-        const frameOffset = Math.floor(offsetFactor * maxOffset);
+        // Calculate frame index to sample from (similar to TouchDesigner's Black Offset to White Offset range)
+        const frameOffset = Math.floor(minFrameOffset + timeOffsetFactor * (maxFrameOffset - minFrameOffset));
         
+        // If we have a frame at this offset, use it
         if (frameOffset > 0 && frameOffset < this.frameHistory.length) {
           const historicalFrame = this.frameHistory[frameOffset];
           
+          // Apply the historical pixel from the frame at this offset
           resultData[pixelIndex] = historicalFrame.data[pixelIndex];
           resultData[pixelIndex + 1] = historicalFrame.data[pixelIndex + 1];
           resultData[pixelIndex + 2] = historicalFrame.data[pixelIndex + 2];
@@ -362,8 +469,14 @@ class VideoEffects {
       }
     }
     
-    const resultImageData = new ImageData(resultData, width, height);
-    this.ctx.putImageData(resultImageData, 0, 0);
+    // Draw result
+    this.ctx.putImageData(new ImageData(resultData, this.canvas.width, this.canvas.height), 0, 0);
+    
+    // Add visual feedback for strong beats (like combining with a Constant TOP on beat in TouchDesigner)
+    if (kick > 0.8) {
+      this.ctx.fillStyle = `rgba(255, 255, 255, ${kick * 0.2})`;
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
   }
 
   private applyPixelateEffect(intensity: number) {
@@ -394,29 +507,35 @@ class VideoEffects {
     this.ctx.restore();
   }
 
-  private applyRGBSplitEffect(data: Uint8ClampedArray, width: number, height: number, intensity: number) {
+  private applyRGBSplitEffect(intensity: number) {
+    if (!this.ctx || !this.canvas) return;
+    
+    const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+    const data = imageData.data;
+    const originalData = new Uint8ClampedArray(data);
+    
     const offsetX = Math.floor(intensity);
     if (offsetX === 0) return;
     
-    const originalData = new Uint8ClampedArray(data);
-    
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const i = (y * width + x) * 4;
+    for (let y = 0; y < this.canvas.height; y++) {
+      for (let x = 0; x < this.canvas.width; x++) {
+        const i = (y * this.canvas.width + x) * 4;
         
         const rX = x - offsetX;
-        if (rX >= 0 && rX < width) {
-          const rI = (y * width + rX) * 4;
+        if (rX >= 0 && rX < this.canvas.width) {
+          const rI = (y * this.canvas.width + rX) * 4;
           data[i] = originalData[rI];
         }
         
         const bX = x + offsetX;
-        if (bX >= 0 && bX < width) {
-          const bI = (y * width + bX) * 4;
+        if (bX >= 0 && bX < this.canvas.width) {
+          const bI = (y * this.canvas.width + bX) * 4;
           data[i + 2] = originalData[bI + 2];
         }
       }
     }
+    
+    this.ctx.putImageData(imageData, 0, 0);
   }
 
   private applyBlurEffect(intensity: number) {
