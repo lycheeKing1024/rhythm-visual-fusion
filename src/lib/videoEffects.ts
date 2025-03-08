@@ -1,4 +1,4 @@
-export type EffectType = 'none' | 'noise' | 'displacement' | 'timeMachine' | 'pixelate' | 'rgb' | 'blur' | 'shake';
+export type EffectType = 'none' | 'noise' | 'displacement' | 'timeMachine' | 'pixelate' | 'rgb' | 'blur' | 'shake' | 'horizontalMove';
 
 export interface Effect {
   type: EffectType;
@@ -91,6 +91,16 @@ export const EFFECTS: Record<EffectType, Effect> = {
     maxValue: 50,
     defaultValue: 20,
     audioFeature: 'kick'
+  },
+  horizontalMove: {
+    type: 'horizontalMove',
+    name: 'Horizontal Move',
+    icon: '↔️',
+    description: 'Moves video horizontally based on kick drum',
+    minValue: 0,
+    maxValue: 50,
+    defaultValue: 20,
+    audioFeature: 'kick'
   }
 };
 
@@ -122,7 +132,7 @@ class VideoEffects {
   public resetConfig() {
     this.config = {
       mappings: [
-        { audioFeature: 'kick', effectType: 'shake', intensity: 10, enabled: true },
+        { audioFeature: 'kick', effectType: 'horizontalMove', intensity: 20, enabled: true },
         { audioFeature: 'snare', effectType: 'noise', intensity: 0.2, enabled: false },
         { audioFeature: 'bass', effectType: 'pixelate', intensity: 20, enabled: false },
         { audioFeature: 'mids', effectType: 'rgb', intensity: 5, enabled: false },
@@ -238,6 +248,9 @@ class VideoEffects {
         return;
       case 'shake':
         this.applyShakeEffect(value * intensity);
+        return;
+      case 'horizontalMove':
+        this.applyHorizontalMoveEffect(value * intensity);
         return;
       default:
         return;
@@ -438,10 +451,27 @@ class VideoEffects {
     
     const maxOffset = intensity;
     const shakeX = (Math.random() - 0.5) * maxOffset;
-    const shakeY = (Math.random() - 0.5) * maxOffset;
     
     this.ctx.save();
-    this.ctx.translate(shakeX, shakeY);
+    this.ctx.translate(shakeX, 0);
+    this.ctx.drawImage(
+      this.video,
+      0, 0, this.video.videoWidth, this.video.videoHeight,
+      0, 0, this.canvas.width, this.canvas.height
+    );
+    this.ctx.restore();
+  }
+
+  private applyHorizontalMoveEffect(intensity: number) {
+    if (!this.ctx || !this.canvas || !this.video) return;
+    
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    const maxOffset = intensity;
+    const moveX = Math.sin(Date.now() * 0.01) * maxOffset;
+    
+    this.ctx.save();
+    this.ctx.translate(moveX, 0);
     this.ctx.drawImage(
       this.video,
       0, 0, this.video.videoWidth, this.video.videoHeight,

@@ -79,7 +79,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ audioFeatures, isAudioPlayi
           // Convert AudioFeatures to Record<string, number> by explicitly creating an object
           // Always use the current ref value to get the latest audio features
           const currentFeatures = audioFeaturesRef.current;
-          console.log('isAudioPlaying', isPlayingRef.current);
+          console.log('currentFeatures', currentFeatures);
           // 如果音频暂停，返回所有参数为0的效果
           if (!isPlayingRef.current) {
             return {
